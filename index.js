@@ -65,41 +65,47 @@ function getCurrentPreset() {
 // ══════════════════════════════════════════
 
 const PPC_THEMES = {
-    // shared button colors — on=soft lime, off=soft red
     dark: {
-        label: '🖤',
-        title: '다크',
-        popup:  { upper:'#23233a', lower:'#1a1a2e', text:'#dcdaf0', shadow:'0 6px 24px rgba(0,0,0,0.6)' },
-        sub:    { bg:'#23233a', text:'#dcdaf0' },
+        label: '🖤', title: '다크',
+        popup: { upper:'#23233a', lower:'#1a1a2e', text:'#dcdaf0', shadow:'0 6px 24px rgba(0,0,0,0.6)' },
+        sub:   { bg:'#23233a', text:'#dcdaf0' },
         rowBorder:'rgba(255,255,255,0.08)',
     },
-    lavender: {
-        label: '💜',
-        title: '라벤더',
-        popup:  { upper:'#f8f5ff', lower:'#ede8f8', text:'#2c2448', shadow:'0 4px 18px rgba(120,90,200,0.14)' },
-        sub:    { bg:'#f8f5ff', text:'#2c2448' },
-        rowBorder:'rgba(120,90,200,0.1)',
-    },
-    sky: {
-        label: '🩵',
-        title: '스카이',
-        popup:  { upper:'#f8feff', lower:'#edf9ff', text:'#143450', shadow:'0 4px 18px rgba(40,120,200,0.10)' },
-        sub:    { bg:'#f8feff', text:'#143450' },
-        rowBorder:'rgba(40,120,200,0.1)',
-    },
-    pink: {
-        label: '🩷',
-        title: '핑크',
-        popup:  { upper:'#fff7fa', lower:'#fdedf4', text:'#3c1830', shadow:'0 4px 18px rgba(200,70,110,0.09)' },
-        sub:    { bg:'#fff7fa', text:'#3c1830' },
-        rowBorder:'rgba(200,70,110,0.1)',
+    white: {
+        label: '🤍', title: '화이트',
+        popup: { upper:'#ffffff', lower:'#f2f2f2', text:'#222222', shadow:'0 4px 18px rgba(0,0,0,0.10)' },
+        sub:   { bg:'#ffffff', text:'#222222' },
+        rowBorder:'rgba(0,0,0,0.07)',
     },
     classic: {
-        label: '🤎',
-        title: '클래식',
-        popup:  { upper:'#f5f0e8', lower:'#ede7db', text:'#2a2520', shadow:'0 4px 18px rgba(0,0,0,0.15)' },
-        sub:    { bg:'#f5f0e8', text:'#2a2520' },
+        label: '🤎', title: '클래식',
+        popup: { upper:'#f5f0e8', lower:'#ede7db', text:'#2a2520', shadow:'0 4px 18px rgba(0,0,0,0.15)' },
+        sub:   { bg:'#f5f0e8', text:'#2a2520' },
         rowBorder:'rgba(0,0,0,0.07)',
+    },
+    pink: {
+        label: '🩷', title: '핑크',
+        popup: { upper:'#fff7fa', lower:'#fdedf4', text:'#3c1830', shadow:'0 4px 18px rgba(200,70,110,0.09)' },
+        sub:   { bg:'#fff7fa', text:'#3c1830' },
+        rowBorder:'rgba(200,70,110,0.1)',
+    },
+    green: {
+        label: '💚', title: '그린',
+        popup: { upper:'#f4fbf6', lower:'#e4f5ea', text:'#1a3022', shadow:'0 4px 18px rgba(40,140,70,0.10)' },
+        sub:   { bg:'#f4fbf6', text:'#1a3022' },
+        rowBorder:'rgba(40,140,70,0.1)',
+    },
+    sky: {
+        label: '🩵', title: '스카이',
+        popup: { upper:'#f8feff', lower:'#edf9ff', text:'#143450', shadow:'0 4px 18px rgba(40,120,200,0.10)' },
+        sub:   { bg:'#f8feff', text:'#143450' },
+        rowBorder:'rgba(40,120,200,0.1)',
+    },
+    lavender: {
+        label: '💜', title: '라벤더',
+        popup: { upper:'#f8f5ff', lower:'#ede8f8', text:'#2c2448', shadow:'0 4px 18px rgba(120,90,200,0.14)' },
+        sub:   { bg:'#f8f5ff', text:'#2c2448' },
+        rowBorder:'rgba(120,90,200,0.1)',
     },
 };
 // Unified On/Off colors across all themes
@@ -1027,11 +1033,11 @@ function getOrCreatePpcPopup() {
     `;
     popup.innerHTML = `
         <div id="ppc-upper" style="background:#f5f0e8;padding:10px 15px;white-space:nowrap;"></div>
-        <div id="ppc-theme-bar" style="display:none;padding:4px 14px;gap:4px;align-items:center;border-top:1px solid rgba(0,0,0,0.06);">
+        <div id="ppc-theme-bar" style="display:none;padding:5px 10px;gap:2px;align-items:center;justify-content:space-between;border-top:1px solid rgba(128,128,128,0.12);">
             ${Object.entries(PPC_THEMES).map(([k,t]) =>
                 `<button class="ppc-theme-btn" data-theme="${k}"
                     title="${t.title}"
-                    style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 4px;border-radius:4px;line-height:1;opacity:0.5;">
+                    style="border:none;background:none;cursor:pointer;font-size:18px;padding:3px 5px;border-radius:6px;line-height:1.2;opacity:0.5;flex:1;text-align:center;">
                     ${t.label}
                 </button>`
             ).join('')}
@@ -1043,9 +1049,9 @@ function getOrCreatePpcPopup() {
         btn.addEventListener('click', e => {
             e.stopPropagation();
             setPpcTheme(btn.dataset.theme);
-            // Hide bar after selection
             const bar = document.getElementById('ppc-theme-bar');
             if (bar) bar.style.display = 'none';
+            if (ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
         });
     });
     document.body.appendChild(popup);
@@ -1140,7 +1146,7 @@ function renderPpcLower() {
         <div id="ppc-grp-head" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;opacity:0.7;">
             <span style="flex:1;display:flex;align-items:center;gap:5px;">그룹 <span>${arrow}</span></span>
             <button id="ppc-theme-toggle" title="테마 선택"
-                style="border:none;background:none;cursor:pointer;font-size:14px;padding:0 2px;line-height:1;opacity:0.55;flex-shrink:0;">🤍</button>
+                style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 4px;line-height:1.4;opacity:0.55;flex-shrink:0;display:inline-flex;align-items:center;">🤍</button>
         </div>
         ${ppcGroupsExpanded ? `<div style="margin-top:4px;">${rowsHtml}</div>` : ''}`;
 
@@ -1160,7 +1166,11 @@ function renderPpcLower() {
         const bar = document.getElementById('ppc-theme-bar');
         if (!bar) return;
         bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
-        if (popup && ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
+        const popupEl = document.getElementById('ppc-popup');
+        // Double RAF: first frame applies layout, second reads correct height
+        if (popupEl && ppcBtn) requestAnimationFrame(() =>
+            requestAnimationFrame(() => positionPpcPopup(popupEl, ppcBtn))
+        );
     });
 
     // Wire On/Off buttons
