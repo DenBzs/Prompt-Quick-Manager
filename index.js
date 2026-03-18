@@ -1,6 +1,6 @@
 // prompt-toggle-manager  (+ preset-profile-check, merged)
 
-const extensionName   = 'Quick-Prompt-Manager';
+const extensionName   = 'prompt-deck';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -42,6 +42,7 @@ async function initImports() {
 const collapsedGroups = new Set();
 let groupReorderMode  = false;
 let toggleReorderMode = null;
+let dragState         = null;
 
 function getTGStore() {
     if (!extension_settings[TG_KEY]) extension_settings[TG_KEY] = { presets: {} };
@@ -59,90 +60,6 @@ function saveGroups(pn, groups) {
 function getCurrentPreset() {
     return oai_settings?.preset_settings_openai || '';
 }
-
-// ══════════════════════════════════════════
-// THEMES — ppc-popup / ppc-sub
-// ══════════════════════════════════════════
-
-const PPC_THEMES = {
-    // shared button colors — on=soft lime, off=soft red
-    dark: {
-        label: '🖤',
-        title: '다크',
-        popup:  { upper:'#23233a', lower:'#1a1a2e', text:'#dcdaf0', shadow:'0 6px 24px rgba(0,0,0,0.6)' },
-        sub:    { bg:'#23233a', text:'#dcdaf0' },
-        rowBorder:'rgba(255,255,255,0.08)',
-    },
-    lavender: {
-        label: '💜',
-        title: '라벤더',
-        popup:  { upper:'#f8f5ff', lower:'#ede8f8', text:'#2c2448', shadow:'0 4px 18px rgba(120,90,200,0.14)' },
-        sub:    { bg:'#f8f5ff', text:'#2c2448' },
-        rowBorder:'rgba(120,90,200,0.1)',
-    },
-    sky: {
-        label: '🩵',
-        title: '스카이',
-        popup:  { upper:'#f6fdff', lower:'#e8f7ff', text:'#143450', shadow:'0 4px 18px rgba(40,120,200,0.11)' },
-        sub:    { bg:'#f6fdff', text:'#143450' },
-        rowBorder:'rgba(40,120,200,0.1)',
-    },
-    pink: {
-        label: '🩷',
-        title: '핑크',
-        popup:  { upper:'#fff4f7', lower:'#fce6ee', text:'#3c1830', shadow:'0 4px 18px rgba(200,70,110,0.12)' },
-        sub:    { bg:'#fff4f7', text:'#3c1830' },
-        rowBorder:'rgba(200,70,110,0.1)',
-    },
-    classic: {
-        label: '🤎',
-        title: '클래식',
-        popup:  { upper:'#f5f0e8', lower:'#ede7db', text:'#2a2520', shadow:'0 4px 18px rgba(0,0,0,0.15)' },
-        sub:    { bg:'#f5f0e8', text:'#2a2520' },
-        rowBorder:'rgba(0,0,0,0.07)',
-    },
-};
-// Unified On/Off colors across all themes
-const PPC_ON_BG  = '#5abf82', PPC_ON_CLR  = '#fff';
-const PPC_OFF_BG = '#bf5a5a', PPC_OFF_CLR = '#fff';
-
-function getPpcTheme() {
-    return getTGStore().ppcTheme || 'classic';
-}
-function setPpcTheme(key) {
-    getTGStore().ppcTheme = key;
-    saveSettingsDebounced();
-    applyPpcTheme();
-}
-function applyPpcTheme() {
-    const key = getPpcTheme();
-    const t = PPC_THEMES[key] || PPC_THEMES.classic;
-    const popup = document.getElementById('ppc-popup');
-    if (popup) {
-        popup.style.border    = 'none';
-        popup.style.color     = t.popup.text;
-        popup.style.boxShadow = t.popup.shadow;
-        const upper = popup.querySelector('#ppc-upper');
-        const lower = popup.querySelector('#ppc-lower');
-        const bar   = popup.querySelector('#ppc-theme-bar');
-        if (upper) upper.style.background = t.popup.upper;
-        if (lower) lower.style.background = t.popup.lower;
-        if (bar)   bar.style.background   = t.popup.lower;
-        popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
-            const active = btn.dataset.theme === key;
-            btn.style.outline       = active ? `2px solid ${t.popup.text}` : 'none';
-            btn.style.outlineOffset = '1px';
-            btn.style.opacity       = active ? '1' : '0.45';
-        });
-    }
-    const sub = document.getElementById('ppc-sub');
-    if (sub) {
-        sub.style.background = t.sub.bg;
-        sub.style.border     = 'none';
-        sub.style.color      = t.sub.text;
-    }
-}
-
 
 // ══════════════════════════════════════════
 // B. Apply group
@@ -181,26 +98,33 @@ function renderTGGroups() {
     const pn = getCurrentPreset();
     if (!pn) { area.innerHTML = '<div class="ptm-ph">프리셋이 선택되지 않았습니다</div>'; return; }
 
-    let validIds;
+    let validIds = null;
     try {
         const pm = setupChatCompletionPromptManager(oai_settings);
         const order = (pm.serviceSettings?.prompt_order || [])
             .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
         validIds = new Set((order?.order || []).map(e => e.identifier));
     } catch(e) {
-        const livePreset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
-        const order = (livePreset?.prompt_order || [])
-            .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
-        validIds = new Set((order?.order || []).map(e => e.identifier));
+        try {
+            const livePreset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
+            const order = (livePreset?.prompt_order || [])
+                .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
+            validIds = new Set((order?.order || []).map(e => e.identifier));
+        } catch(e2) {
+            console.warn('[PromptDeck] Could not get valid prompt IDs, skipping cleanup:', e2);
+        }
     }
     const groups = getGroupsForPreset(pn);
-    let changed = false;
-    groups.forEach(g => {
-        const before = g.toggles.length;
-        g.toggles = g.toggles.filter(t => validIds.has(t.target));
-        if (g.toggles.length !== before) changed = true;
-    });
-    if (changed) saveGroups(pn, groups);
+    // Only filter stale toggles if we successfully retrieved valid IDs
+    if (validIds !== null && validIds.size > 0) {
+        let changed = false;
+        groups.forEach(g => {
+            const before = g.toggles.length;
+            g.toggles = g.toggles.filter(t => validIds.has(t.target));
+            if (g.toggles.length !== before) changed = true;
+        });
+        if (changed) saveGroups(pn, groups);
+    }
 
     if (!groups.length) { area.innerHTML = '<div class="ptm-ph">그룹이 없습니다</div>'; return; }
     area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn)).join('');
@@ -231,9 +155,9 @@ function buildGroupCard(g, gi, pn) {
         else                   { ovrLabel = 'Off'; ovrCls = 'ptm-tovr-off'; }
 
         return `
-        <div class="ptm-trow" ${inToggleReorder ? 'data-draggable="true"' : ''} data-gi="${gi}" data-ti="${ti}">
+        <div class="ptm-trow" data-gi="${gi}" data-ti="${ti}">
             ${inToggleReorder
-                ? `<span class="ptm-drag-handle" title="드래그하여 이동">⠿</span>`
+                ? `<span class="ptm-drag-handle" data-gi="${gi}" data-ti="${ti}" title="드래그">⠿</span>`
                 : `<span class="ptm-tstate ${effectiveOn ? 'ptm-ts-on' : 'ptm-ts-off'}">${effectiveOn ? 'On' : 'Off'}</span>`}
             <button class="ptm-ibtn ptm-tovr ${ovrCls}" data-gi="${gi}" data-ti="${ti}">${ovrLabel}</button>
             <span class="ptm-tname">${name}</span>
@@ -258,18 +182,18 @@ function buildGroupCard(g, gi, pn) {
             ` : `<button class="ptm-onoff ${g.isOn ? 'ptm-onoff-on' : 'ptm-onoff-off'}" data-gi="${gi}">${g.isOn ? 'On' : 'Off'}</button>`}
             <span class="ptm-gname">${g.name} <span class="ptm-gcnt">(${toggleCount})</span></span>
             <div class="ptm-gbtns">
-                ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-ren-grp" data-gi="${gi}">✏️</button>` : ''}
+                ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-ibtn ptm-ren-grp" data-gi="${gi}">✏️</button>` : ''}
                 ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-reorder-grp-btn" data-gi="${gi}" title="토글 순서 변경">⠿</button>` : ''}
-                ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-ibtn ptm-popup-pin${g.showInPopup ? ' ptm-pin-active' : ''}" data-gi="${gi}" title="미니창에 표시" style="${g.showInPopup ? 'opacity:1;background:rgba(160,144,232,0.25);color:#b0a0f0;' : 'opacity:0.35;'}">📌</button>` : ''}
                 ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-ibtn ptm-danger ptm-del-grp" data-gi="${gi}">✕</button>` : ''}
                 ${inToggleReorder ? `<button class="ptm-ibtn ptm-toggle-reorder-done" data-gi="${gi}" style="color:#6ddb9e">✓</button>` : ''}
+                ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-ibtn ptm-popup-btn${g.showInPopup ? ' ptm-popup-btn-on' : ''}" data-gi="${gi}" title="팝업에 표시">팝업</button>` : ''}
                 <button class="ptm-ibtn ptm-collapse-grp" data-gi="${gi}" data-cpkey="${collapseKey}" title="${isCollapsed ? '펼치기' : '접기'}">${isCollapsed ? '▸' : '▾'}</button>
             </div>
         </div>
         <div class="ptm-tlist${isCollapsed ? ' ptm-hidden' : ''}">
             ${rows || '<div class="ptm-ph" style="padding:6px;font-size:11px">토글 없음</div>'}
         </div>
-        ${!groupReorderMode ? `<button class="ptm-sm ptm-add-toggle${isCollapsed ? ' ptm-hidden' : ''}" data-gi="${gi}" style="width:calc(100% - 12px);margin:2px 6px;box-sizing:border-box;">+ 토글 추가</button>` : ''}
+        ${!groupReorderMode ? `<button class="ptm-sm ptm-sm-full ptm-add-toggle${isCollapsed ? ' ptm-hidden' : ''}" data-gi="${gi}">+ 토글 추가</button>` : ''}
     </div>`;
 }
 
@@ -307,13 +231,6 @@ function wireGroupCards(area) {
         saveGroups(pn, gs);
         renderTGGroups();
         refreshPpcPopup();
-        // 서브창이 같은 gi로 열려있으면 다시 렌더링
-        const sub = document.getElementById('ppc-sub');
-        if (sub && sub.style.display !== 'none' && ppcSubGi === gi) {
-            sub.innerHTML = buildPpcSubHtml(gi);
-            wirePpcSub(sub, gi);
-            requestAnimationFrame(() => positionPpcSub(sub));
-        }
     }));
     area.querySelectorAll('.ptm-tovr').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, ti = +btn.dataset.ti, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
@@ -347,14 +264,14 @@ function wireGroupCards(area) {
     area.querySelectorAll('.ptm-add-toggle').forEach(btn => btn.addEventListener('click', () => {
         showAddToggleModal(+btn.dataset.gi);
     }));
-    // 팝업 핀 토글 버튼
-    area.querySelectorAll('button.ptm-popup-pin').forEach(btn => btn.addEventListener('click', e => {
-        e.stopPropagation();
+    // "팝업" toggle button
+    area.querySelectorAll('.ptm-popup-btn').forEach(btn => btn.addEventListener('click', () => {
         const gi = +btn.dataset.gi, pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
         gs[gi].showInPopup = !gs[gi].showInPopup;
         saveGroups(pn, gs);
         refreshPpcPopup();
-        renderTGGroups();
+        // update button appearance without full re-render
+        btn.classList.toggle('ptm-popup-btn-on', gs[gi].showInPopup);
     }));
 }
 
@@ -794,158 +711,63 @@ function wireTGReorder() {
     const area = document.getElementById('ptm-tg-area');
     if (!area) return;
 
-    let dragSrc  = null;
-    let dragOver = null;
-    let ghostEl  = null;
-    let rafId    = null;
-    let pendingX = 0, pendingY = 0;
-
-
-    function createGhost(row) {
-        const g = row.cloneNode(true);
-        const r = row.getBoundingClientRect();
-        g.style.cssText = `
-            position:fixed;pointer-events:none;z-index:2147483647;
-            opacity:0.82;border-radius:5px;
-            background:var(--SmartThemeBlurTintColor,rgba(40,40,40,0.95));
-            box-shadow:0 6px 18px rgba(0,0,0,0.35);
-            width:${r.width}px;
-            left:${r.left}px;top:${r.top}px;
-            will-change:transform;
-            transition:none;
-        `;
-        document.body.appendChild(g);
-        return g;
-    }
-
-    function moveGhost(x, y) {
-        pendingX = x; pendingY = y;
-        if (rafId) return;
-        rafId = requestAnimationFrame(() => {
-            rafId = null;
-            if (!ghostEl) return;
-            ghostEl.style.left = (pendingX - ghostEl.offsetWidth / 2) + 'px';
-            ghostEl.style.top  = (pendingY - 20) + 'px';
-        });
-    }
-
-    function clearGhost() {
-        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-        if (ghostEl) { ghostEl.remove(); ghostEl = null; }
-    }
-
-    function highlightOver(ti) {
-        area.querySelectorAll('.ptm-trow').forEach(r => r.classList.remove('ptm-drag-over'));
-        if (ti == null) { dragOver = null; return; }
-        const target = area.querySelector(`.ptm-trow[data-ti="${ti}"][data-gi="${dragSrc?.gi}"]`);
-        if (target) { target.classList.add('ptm-drag-over'); dragOver = ti; }
-    }
-
-    function getRowAtPoint(x, y) {
-        // Temporarily hide ghost so elementsFromPoint can see elements underneath
-        if (ghostEl) ghostEl.style.visibility = 'hidden';
-        const els = document.elementsFromPoint(x, y);
-        if (ghostEl) ghostEl.style.visibility = '';
-        for (const el of els) {
-            const row = el.closest?.('.ptm-trow[data-draggable="true"]');
-            if (row && +row.dataset.gi === dragSrc?.gi) return row;
-        }
-        return null;
-    }
-
-
-    function endDrag(x, y) {
-        if (!dragSrc) return;
-        // Final hit-test at drop position
-        let toTi = dragOver;
-        if (x != null && y != null && toTi == null) {
-            const row = getRowAtPoint(x, y);
-            if (row && +row.dataset.gi === dragSrc.gi && +row.dataset.ti !== dragSrc.ti) {
-                toTi = +row.dataset.ti;
-            }
-        }
-        clearGhost();
-        highlightOver(null);
-        if (dragSrc.el) dragSrc.el.classList.remove('ptm-dragging');
-        const fromTi = dragSrc.ti;
-        const fromGi = dragSrc.gi;
-        dragSrc  = null;
-        dragOver = null;
-        if (toTi != null && toTi !== fromTi) {
-            const pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
-            const toggles = gs[fromGi].toggles;
-            const [moved] = toggles.splice(fromTi, 1);
-            toggles.splice(toTi, 0, moved);
-            saveGroups(pn, gs);
-            renderTGGroups();
-        }
-    }
-
-    // ── Mouse events ──
-    area.addEventListener('mousedown', e => {
+    // Pointer-event based drag (no HTML5 drag API: no delay, no screen-dim)
+    area.addEventListener('pointerdown', e => {
         if (toggleReorderMode === null) return;
         const handle = e.target.closest('.ptm-drag-handle');
         if (!handle) return;
-        const row = handle.closest('.ptm-trow[data-draggable="true"]');
-        if (!row || +row.dataset.gi !== toggleReorderMode) return;
+        const gi = +handle.dataset.gi, ti = +handle.dataset.ti;
+        if (gi !== toggleReorderMode) return;
+
         e.preventDefault();
-        dragSrc = { gi: +row.dataset.gi, ti: +row.dataset.ti, el: row };
-        row.classList.add('ptm-dragging');
-        ghostEl = createGhost(row);
-        moveGhost(e.clientX, e.clientY);
+        handle.setPointerCapture(e.pointerId);
+        dragState = { gi, ti, pointerId: e.pointerId };
+
+        const srcRow = area.querySelector(`.ptm-trow[data-gi="${gi}"][data-ti="${ti}"]`);
+        if (srcRow) srcRow.classList.add('ptm-dragging');
     });
 
-    document.addEventListener('mousemove', e => {
-        if (!dragSrc) return;
-        moveGhost(e.clientX, e.clientY);
-        const row = getRowAtPoint(e.clientX, e.clientY);
-        if (row && +row.dataset.ti !== dragSrc.ti) {
-            highlightOver(+row.dataset.ti);
-        } else if (!row) {
-            highlightOver(null);
+    area.addEventListener('pointermove', e => {
+        if (!dragState) return;
+        e.preventDefault();
+        // Clear previous highlight
+        area.querySelectorAll('.ptm-drag-over').forEach(el => el.classList.remove('ptm-drag-over'));
+        // Find row under pointer (temporarily hide dragging row to hit-test correctly)
+        const srcRow = area.querySelector(`.ptm-trow[data-gi="${dragState.gi}"][data-ti="${dragState.ti}"]`);
+        if (srcRow) srcRow.style.pointerEvents = 'none';
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        if (srcRow) srcRow.style.pointerEvents = '';
+        const row = target?.closest('.ptm-trow');
+        if (row && +row.dataset.gi === dragState.gi && +row.dataset.ti !== dragState.ti) {
+            row.classList.add('ptm-drag-over');
         }
     });
 
-    document.addEventListener('mouseup', e => {
-        if (!dragSrc) return;
-        endDrag(e.clientX, e.clientY);
-    });
-
-    // ── Touch events ──
-    area.addEventListener('touchstart', e => {
-        if (toggleReorderMode === null) return;
-        const touch = e.touches[0];
-        const handle = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.ptm-drag-handle');
-        if (!handle) return;
-        const row = handle.closest('.ptm-trow[data-draggable="true"]');
-        if (!row || +row.dataset.gi !== toggleReorderMode) return;
-        e.preventDefault();
-        dragSrc = { gi: +row.dataset.gi, ti: +row.dataset.ti, el: row };
-        row.classList.add('ptm-dragging');
-        ghostEl = createGhost(row);
-        moveGhost(touch.clientX, touch.clientY);
-    }, { passive: false });
-
-    area.addEventListener('touchmove', e => {
-        if (!dragSrc) return;
-        e.preventDefault();
-        const touch = e.touches[0];
-        moveGhost(touch.clientX, touch.clientY);
-        const row = getRowAtPoint(touch.clientX, touch.clientY);
-        if (row && +row.dataset.ti !== dragSrc.ti) {
-            highlightOver(+row.dataset.ti);
-        } else if (!row) {
-            highlightOver(null);
+    area.addEventListener('pointerup', e => {
+        if (!dragState) return;
+        const target = document.elementFromPoint(e.clientX, e.clientY);
+        const row = target?.closest('.ptm-trow');
+        if (row && +row.dataset.gi === dragState.gi && +row.dataset.ti !== dragState.ti) {
+            const pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
+            const toggles = gs[dragState.gi].toggles;
+            const [moved] = toggles.splice(dragState.ti, 1);
+            toggles.splice(+row.dataset.ti, 0, moved);
+            saveGroups(pn, gs);
         }
-    }, { passive: false });
-
-    area.addEventListener('touchend', e => {
-        if (!dragSrc) return;
-        const touch = e.changedTouches[0];
-        endDrag(touch.clientX, touch.clientY);
+        // Clean up
+        area.querySelectorAll('.ptm-drag-over, .ptm-dragging').forEach(el => {
+            el.classList.remove('ptm-drag-over', 'ptm-dragging');
+        });
+        dragState = null;
+        renderTGGroups();
     });
 
-    area.addEventListener('touchcancel', () => endDrag(null, null));
+    area.addEventListener('pointercancel', () => {
+        area.querySelectorAll('.ptm-drag-over, .ptm-dragging').forEach(el => {
+            el.classList.remove('ptm-drag-over', 'ptm-dragging');
+        });
+        dragState = null;
+    });
 }
 
 // ══════════════════════════════════════════
@@ -955,7 +777,6 @@ function wireTGReorder() {
 let ppcIsOpen         = false;
 let ppcGroupsExpanded = false;
 let ppcBtn            = null;
-let ppcSubGi          = null;
 
 function escapeHtml(str) {
     return String(str)
@@ -1014,8 +835,8 @@ function getOrCreatePpcPopup() {
         display:none;
         position:fixed;
         z-index:2147483647;
-        border:none;
-        border-radius:10px;
+        border:1px solid #d6cfc3;
+        border-radius:8px;
         font-size:14px;
         line-height:1.6;
         color:#2a2a2a;
@@ -1025,27 +846,8 @@ function getOrCreatePpcPopup() {
     `;
     popup.innerHTML = `
         <div id="ppc-upper" style="background:#f5f0e8;padding:10px 15px;white-space:nowrap;"></div>
-        <div id="ppc-theme-bar" style="display:none;padding:4px 14px;gap:4px;align-items:center;border-top:1px solid rgba(0,0,0,0.06);">
-            ${Object.entries(PPC_THEMES).map(([k,t]) =>
-                `<button class="ppc-theme-btn" data-theme="${k}"
-                    title="${t.title}"
-                    style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 4px;border-radius:4px;line-height:1;opacity:0.5;">
-                    ${t.label}
-                </button>`
-            ).join('')}
-        </div>
         <div id="ppc-lower" style="background:#e8e2d8;padding:8px 14px;"></div>
     `;
-    // Wire theme buttons
-    popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            setPpcTheme(btn.dataset.theme);
-            // Hide bar after selection
-            const bar = document.getElementById('ppc-theme-bar');
-            if (bar) bar.style.display = 'none';
-        });
-    });
     document.body.appendChild(popup);
     return popup;
 }
@@ -1078,17 +880,12 @@ async function openPpcPopup() {
     renderPpcLower();
     popup.style.display = 'block';
     ppcIsOpen = true;
-    requestAnimationFrame(() => { positionPpcPopup(popup, ppcBtn); applyPpcTheme(); });
+    requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
 }
 
 function closePpcPopup() {
     const popup = document.getElementById('ppc-popup');
-    if (popup) {
-        popup.style.display = 'none';
-        // Hide theme bar when closing
-        const bar = popup.querySelector('#ppc-theme-bar');
-        if (bar) bar.style.display = 'none';
-    }
+    if (popup) popup.style.display = 'none';
     closePpcSub();
     ppcIsOpen = false;
 }
@@ -1116,12 +913,12 @@ function renderPpcLower() {
             rowsHtml = `<div style="font-size:12px;opacity:0.55;padding:3px 0 1px;">표시할 그룹 없음</div>`;
         } else {
             rowsHtml = visible.map(({ g, gi }) => {
-                const bg  = g.isOn ? PPC_ON_BG  : PPC_OFF_BG;
-                const clr = g.isOn ? PPC_ON_CLR : PPC_OFF_CLR;
+                const bg  = g.isOn ? '#6ddb9e' : '#555';
+                const clr = g.isOn ? '#1a1a1a' : '#ccc';
                 return `
                 <div style="display:flex;align-items:center;gap:7px;padding:3px 0;">
                     <button class="ppc-grp-toggle" data-gi="${gi}"
-                        style="flex-shrink:0;border:none;border-radius:4px;width:32px;height:20px;font-size:11px;font-weight:700;cursor:pointer;background:${bg};color:${clr};display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">
+                        style="flex-shrink:0;border:none;border-radius:4px;padding:1px 9px;font-size:12px;font-weight:600;cursor:pointer;background:${bg};color:${clr};">
                         ${g.isOn ? 'On' : 'Off'}
                     </button>
                     <span class="ppc-grp-name" data-gi="${gi}"
@@ -1136,28 +933,16 @@ function renderPpcLower() {
 
     lower.innerHTML = `
         <div id="ppc-grp-head" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;opacity:0.7;">
-            <span style="flex:1;display:flex;align-items:center;gap:5px;">그룹 <span>${arrow}</span></span>
-            <button id="ppc-theme-toggle" title="테마 선택"
-                style="border:none;background:none;cursor:pointer;font-size:14px;padding:0 2px;line-height:1;opacity:0.55;flex-shrink:0;">🤍</button>
+            <span>그룹</span><span>${arrow}</span>
         </div>
         ${ppcGroupsExpanded ? `<div style="margin-top:4px;">${rowsHtml}</div>` : ''}`;
 
     // Wire header toggle
-    lower.querySelector('#ppc-grp-head').addEventListener('click', (e) => {
-        if (e.target.closest('#ppc-theme-toggle')) return;
-        e.stopPropagation();
+    lower.querySelector('#ppc-grp-head').addEventListener('click', e => {
+        e.stopPropagation(); // prevent document click from closing the popup
         ppcGroupsExpanded = !ppcGroupsExpanded;
         renderPpcLower();
         const popup = document.getElementById('ppc-popup');
-        if (popup && ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
-    });
-
-    // Wire 🤍 theme toggle button
-    lower.querySelector('#ppc-theme-toggle')?.addEventListener('click', e => {
-        e.stopPropagation();
-        const bar = document.getElementById('ppc-theme-bar');
-        if (!bar) return;
-        bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
         if (popup && ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
     });
 
@@ -1171,13 +956,6 @@ function renderPpcLower() {
             saveGroups(pn2, gs);
             renderPpcLower();
             renderTGGroups();
-            // 서브창이 같은 gi로 열려있으면 동기화
-            const sub = document.getElementById('ppc-sub');
-            if (sub && sub.style.display !== 'none' && ppcSubGi === gi) {
-                sub.innerHTML = buildPpcSubHtml(gi);
-                wirePpcSub(sub, gi);
-                requestAnimationFrame(() => positionPpcSub(sub));
-            }
             const popup = document.getElementById('ppc-popup');
             if (popup && ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
         });
@@ -1206,11 +984,11 @@ function getOrCreatePpcSub() {
         position:fixed;
         z-index:2147483648;
         background:#f5f0e8;
-        border:none;
-        border-radius:10px;
+        border:1px solid #d6cfc3;
+        border-radius:8px;
         font-size:13px;
         color:#2a2a2a;
-        box-shadow:0 6px 24px rgba(0,0,0,0.18);
+        box-shadow:0 4px 20px rgba(0,0,0,0.2);
         min-width:240px;
         max-width:320px;
         max-height:70vh;
@@ -1223,54 +1001,34 @@ function getOrCreatePpcSub() {
 function positionPpcSub(sub) {
     const popup = document.getElementById('ppc-popup');
     const vw = window.innerWidth, vh = window.innerHeight;
-
-    // Set max-height so sub never covers the popup below it
-    if (popup) {
-        const pr = popup.getBoundingClientRect();
-        const availableH = pr.top - 18; // gap above popup
-        sub.style.maxHeight = Math.max(120, availableH) + 'px';
-        sub.style.overflowY = 'auto';
-    }
-
     const subW = sub.offsetWidth  || 280;
     const subH = sub.offsetHeight || 200;
-
-    // Horizontally: center over popup
-    let left;
-    if (popup) {
-        const pr = popup.getBoundingClientRect();
-        left = pr.left + (pr.width - subW) / 2;
-    } else {
-        left = (vw - subW) / 2;
-    }
-    left = Math.max(8, Math.min(left, vw - subW - 8));
-
-    // Vertically: just above popup
+    // Center horizontally
+    const left = Math.max(8, Math.min((vw - subW) / 2, vw - subW - 8));
+    // Above main popup if space, else below, else center vertically
     let top;
     if (popup) {
         const pr = popup.getBoundingClientRect();
-        top = pr.top - subH - 8;
-        if (top < 8) top = 8;
+        top = pr.top - subH - 10;
+        if (top < 8) top = pr.bottom + 10;
+        if (top + subH > vh - 8) top = Math.max(8, (vh - subH) / 2);
     } else {
         top = Math.max(8, (vh - subH) / 2);
     }
-
     sub.style.left = left + 'px';
     sub.style.top  = top  + 'px';
 }
 
 function openPpcSub(gi) {
     const sub = getOrCreatePpcSub();
-    ppcSubGi = gi;
     sub.innerHTML = buildPpcSubHtml(gi);
     sub.style.display = 'block';
-    requestAnimationFrame(() => { positionPpcSub(sub); wirePpcSub(sub, gi); applyPpcTheme(); });
+    requestAnimationFrame(() => { positionPpcSub(sub); wirePpcSub(sub, gi); });
 }
 
 function closePpcSub() {
     const sub = document.getElementById('ppc-sub');
     if (sub) sub.style.display = 'none';
-    ppcSubGi = null;
 }
 
 function buildPpcSubHtml(gi) {
@@ -1285,8 +1043,8 @@ function buildPpcSubHtml(gi) {
         allPrompts = preset?.prompts || [];
     }
 
-    const grpBg  = g.isOn ? PPC_ON_BG  : PPC_OFF_BG;
-    const grpClr = g.isOn ? PPC_ON_CLR : PPC_OFF_CLR;
+    const grpBg  = g.isOn ? '#6ddb9e' : '#555';
+    const grpClr = g.isOn ? '#1a1a1a' : '#ccc';
 
     const rows = g.toggles.map((t, ti) => {
         const name     = allPrompts.find(p => p.identifier === t.target)?.name ?? '';
@@ -1295,25 +1053,27 @@ function buildPpcSubHtml(gi) {
         const effectOn = ovr !== null ? ovr : (isDirect ? g.isOn : !g.isOn);
 
         let ovrBg, ovrClr, ovrLabel;
-        if (ovr === null)      { ovrLabel = '고정'; ovrBg = 'rgba(150,150,150,0.25)'; ovrClr = '#c0c0c0'; }
-        else if (ovr === true) { ovrLabel = 'On';  ovrBg = 'rgba(90,184,130,0.25)';  ovrClr = '#6dcc96'; }
-        else                   { ovrLabel = 'Off'; ovrBg = 'rgba(184,90,90,0.25)';   ovrClr = '#d07070'; }
+        if (ovr === null)      { ovrLabel = '고정'; ovrBg = '#999';    ovrClr = '#eee'; }
+        else if (ovr === true) { ovrLabel = 'On';  ovrBg = '#6ddb9e'; ovrClr = '#1a1a1a'; }
+        else                   { ovrLabel = 'Off'; ovrBg = '#e07070'; ovrClr = '#fff'; }
 
-        const bBg  = isDirect ? 'rgba(150,150,150,0.25)' : 'rgba(122,100,220,0.25)';
-        const bClr = isDirect ? '#c0c0c0' : '#b0a0f0';
+        const bBg = isDirect ? '#7a7ae0' : '#c07830';
 
-        const btnStyle = 'border:none;border-radius:3px;width:30px;min-width:30px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;letter-spacing:-0.3px;';
         return `
         <div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.08);">
-            <span style="font-size:10px;width:22px;min-width:22px;height:18px;text-align:center;font-weight:700;color:${effectOn ? '#6dcc96' : '#999'};display:inline-flex;align-items:center;justify-content:center;">${effectOn ? 'On' : 'Off'}</span>
+            <span style="font-size:11px;min-width:24px;text-align:center;color:${effectOn ? '#4a9e6e' : '#aaa'};">${effectOn ? 'On' : 'Off'}</span>
             <button class="ppc-sub-ovr" data-ti="${ti}"
-                style="${btnStyle}background:${ovrBg};color:${ovrClr};">
+                style="border:none;border-radius:3px;padding:2px 4px;font-size:10px;cursor:pointer;flex-shrink:0;width:38px;text-align:center;background:${ovrBg};color:${ovrClr};">
                 ${ovrLabel}
             </button>
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
             <button class="ppc-sub-bsel" data-ti="${ti}"
-                style="${btnStyle}background:${bBg};color:${bClr};">
+                style="border:none;border-radius:3px;padding:2px 7px;font-size:11px;cursor:pointer;flex-shrink:0;background:${bBg};color:#eee;">
                 ${isDirect ? '동일' : '반전'}
+            </button>
+            <button class="ppc-sub-del" data-ti="${ti}"
+                style="border:none;background:transparent;color:#c06060;cursor:pointer;font-size:14px;padding:0 3px;flex-shrink:0;line-height:1;">
+                ✕
             </button>
         </div>`;
     }).join('');
@@ -1322,7 +1082,7 @@ function buildPpcSubHtml(gi) {
     <div style="padding:12px 14px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
             <button class="ppc-sub-grp-toggle"
-                style="border:none;border-radius:4px;width:32px;height:20px;cursor:pointer;font-size:11px;font-weight:700;flex-shrink:0;background:${grpBg};color:${grpClr};display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;">
+                style="border:none;border-radius:5px;padding:3px 12px;cursor:pointer;font-size:13px;font-weight:600;flex-shrink:0;background:${grpBg};color:${grpClr};">
                 ${g.isOn ? 'On' : 'Off'}
             </button>
             <strong style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${escapeHtml(g.name)}</strong>
@@ -1332,7 +1092,10 @@ function buildPpcSubHtml(gi) {
         <div class="ppc-sub-rows">
             ${rows || '<div style="opacity:0.5;font-size:12px;padding:4px 0;">토글 없음</div>'}
         </div>
-
+        <button class="ppc-sub-add"
+            style="margin-top:10px;width:100%;border:1px dashed #b0a898;background:transparent;border-radius:5px;padding:6px;cursor:pointer;color:#5a5450;font-size:12px;">
+            + 토글 추가
+        </button>
     </div>`;
 }
 
@@ -1364,7 +1127,6 @@ function wirePpcSub(sub, gi) {
         sub.innerHTML = buildPpcSubHtml(gi);
         wirePpcSub(sub, gi);
         renderTGGroups();
-        renderPpcLower();
     }));
 
     sub.querySelectorAll('.ppc-sub-bsel').forEach(btn => btn.addEventListener('click', e => {
@@ -1377,7 +1139,27 @@ function wirePpcSub(sub, gi) {
         renderTGGroups();
     }));
 
+    sub.querySelectorAll('.ppc-sub-del').forEach(btn => btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const ti = +btn.dataset.ti, gs = getGroupsForPreset(pn);
+        gs[gi].toggles.splice(ti, 1);
+        saveGroups(pn, gs);
+        sub.innerHTML = buildPpcSubHtml(gi);
+        wirePpcSub(sub, gi);
+        renderPpcLower();
+        renderTGGroups();
+    }));
 
+    sub.querySelector('.ppc-sub-add')?.addEventListener('click', async e => {
+        e.stopPropagation();
+        await showAddToggleModal(gi);
+        // showAddToggleModal calls renderTGGroups & saveGroups internally
+        sub.innerHTML = buildPpcSubHtml(gi);
+        wirePpcSub(sub, gi);
+        renderPpcLower();
+        const popup = document.getElementById('ppc-popup');
+        if (popup && ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
+    });
 }
 
 // ══════════════════════════════════════════
@@ -1413,17 +1195,12 @@ function injectPpcButton() {
         ppcIsOpen ? closePpcPopup() : openPpcPopup();
     });
 
-    // Close on outside click — sub first, then main
+    // Close on outside click
     document.addEventListener('click', e => {
         if (!ppcIsOpen) return;
         const popup = document.getElementById('ppc-popup');
         const sub   = document.getElementById('ppc-sub');
-        const subVisible = sub && sub.style.display !== 'none';
-        const outsideAll = !btn.contains(e.target) && !popup?.contains(e.target) && !sub?.contains(e.target);
-        if (!outsideAll) return;
-        if (subVisible) {
-            closePpcSub();
-        } else {
+        if (!btn.contains(e.target) && !popup?.contains(e.target) && !sub?.contains(e.target)) {
             closePpcPopup();
         }
     });
@@ -1476,6 +1253,49 @@ function setupPpcEvents() {
     }
 }
 
+
+// ══════════════════════════════════════════
+// Migration — PTM → QPM 자동 데이터 이전
+// ══════════════════════════════════════════
+
+function migrateFromLegacy() {
+    // 구버전 확장의 저장 키 목록 (현재 키는 자동 제외)
+    const LEGACY_KEYS = ['prompt-toggle-manager', 'prompt-deck'].filter(k => k !== TG_KEY);
+
+    for (const oldKey of LEGACY_KEYS) {
+        const old = extension_settings[oldKey];
+        if (!old?.presets) continue;
+
+        const cur = getTGStore();
+        let migrated = 0;
+
+        for (const [presetName, groups] of Object.entries(old.presets)) {
+            if (!Array.isArray(groups) || !groups.length) continue;
+
+            if (!cur.presets[presetName]) {
+                // 해당 프리셋 데이터가 없으면 그대로 복사
+                cur.presets[presetName] = JSON.parse(JSON.stringify(groups));
+                migrated += groups.length;
+            } else {
+                // 이미 데이터 있으면 이름 중복 없는 그룹만 추가
+                const existingNames = new Set(cur.presets[presetName].map(g => g.name));
+                const toAdd = groups.filter(g => !existingNames.has(g.name));
+                cur.presets[presetName].push(...JSON.parse(JSON.stringify(toAdd)));
+                migrated += toAdd.length;
+            }
+        }
+
+        if (migrated > 0) {
+            saveSettingsDebounced();
+            console.log(`[${extensionName}] '${oldKey}' 에서 그룹 ${migrated}개 마이그레이션 완료`);
+            toastr.success(
+                `기존 확장(${oldKey})에서 그룹 ${migrated}개를 자동으로 가져왔습니다.`,
+                '📋 데이터 마이그레이션 완료'
+            );
+        }
+    }
+}
+
 // ══════════════════════════════════════════
 // I. Mount & Init
 // ══════════════════════════════════════════
@@ -1494,6 +1314,7 @@ jQuery(async () => {
     console.log(`[${extensionName}] Loading...`);
     try {
         await initImports();
+        migrateFromLegacy();
         let c = 0;
         const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
         eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => renderTGGroups());
