@@ -130,24 +130,26 @@ function applyPpcTheme() {
         popup.style.boxShadow = t.popup.shadow;
         const upper = popup.querySelector('#ppc-upper');
         const lower = popup.querySelector('#ppc-lower');
-        const bar   = popup.querySelector('#ppc-theme-bar');
         if (upper) upper.style.background = t.popup.upper;
         if (lower) lower.style.background = t.popup.lower;
-        if (bar)   bar.style.background   = t.popup.lower;
-        popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
-            const active = btn.dataset.theme === key;
-            btn.style.outline       = 'none';
-            btn.style.background    = active ? 'rgba(128,128,128,0.18)' : 'none';
-            btn.style.borderRadius  = '6px';
-            btn.style.transform     = active ? 'scale(1.18)' : 'scale(1)';
-            btn.style.opacity       = active ? '1' : '0.45';
-        });
     }
     const sub = document.getElementById('ppc-sub');
     if (sub) {
         sub.style.background = t.sub.bg;
         sub.style.border     = 'none';
         sub.style.color      = t.sub.text;
+    }
+    // Apply theme to standalone theme bar
+    const bar = document.getElementById('ppc-theme-bar');
+    if (bar) {
+        bar.style.background = t.popup.upper;
+        bar.style.color      = t.popup.text;
+        bar.querySelectorAll('.ppc-theme-btn').forEach(btn => {
+            const active = btn.dataset.theme === key;
+            btn.style.background = active ? 'rgba(128,128,128,0.18)' : 'none';
+            btn.style.transform  = active ? 'scale(1.18)' : 'scale(1)';
+            btn.style.opacity    = active ? '1' : '0.45';
+        });
     }
 }
 
@@ -1033,28 +1035,46 @@ function getOrCreatePpcPopup() {
     `;
     popup.innerHTML = `
         <div id="ppc-upper" style="background:#f5f0e8;padding:10px 15px;white-space:nowrap;"></div>
-        <div id="ppc-theme-bar" style="display:none;padding:5px 10px;gap:2px;align-items:center;justify-content:space-between;border-top:1px solid rgba(128,128,128,0.12);">
-            ${Object.entries(PPC_THEMES).map(([k,t]) =>
-                `<button class="ppc-theme-btn" data-theme="${k}"
-                    title="${t.title}"
-                    style="border:none;background:none;cursor:pointer;font-size:18px;padding:3px 5px;border-radius:6px;line-height:1.2;opacity:0.5;flex:1;text-align:center;">
-                    ${t.label}
-                </button>`
-            ).join('')}
-        </div>
         <div id="ppc-lower" style="background:#e8e2d8;padding:8px 14px;"></div>
     `;
-    // Wire theme buttons
-    popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-            e.stopPropagation();
-            setPpcTheme(btn.dataset.theme);
-            const bar = document.getElementById('ppc-theme-bar');
-            if (bar) bar.style.display = 'none';
-            if (ppcBtn) requestAnimationFrame(() => positionPpcPopup(popup, ppcBtn));
-        });
-    });
     document.body.appendChild(popup);
+
+    // Theme bar — separate fixed element, positioned above popup, never changes popup height
+    let themeBar = document.getElementById('ppc-theme-bar');
+    if (!themeBar) {
+        themeBar = document.createElement('div');
+        themeBar.id = 'ppc-theme-bar';
+        themeBar.style.cssText = `
+            display:none;
+            position:fixed;
+            z-index:2147483648;
+            border-radius:10px;
+            padding:5px 10px;
+            gap:2px;
+            align-items:center;
+            justify-content:space-between;
+            min-width:200px;
+            box-shadow:0 4px 16px rgba(0,0,0,0.15);
+            box-sizing:border-box;
+        `;
+        themeBar.innerHTML = Object.entries(PPC_THEMES).map(([k,t]) =>
+            `<button class="ppc-theme-btn" data-theme="${k}"
+                title="${t.title}"
+                style="border:none;background:none;cursor:pointer;font-size:18px;padding:3px 5px;border-radius:6px;line-height:1.2;opacity:0.5;flex:1;text-align:center;">
+                ${t.label}
+            </button>`
+        ).join('');
+        document.body.appendChild(themeBar);
+
+        themeBar.querySelectorAll('.ppc-theme-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                setPpcTheme(btn.dataset.theme);
+                themeBar.style.display = 'none';
+            });
+        });
+        themeBar.addEventListener('click', e => e.stopPropagation());
+    }
     return popup;
 }
 
@@ -1068,6 +1088,18 @@ function positionPpcPopup(popup, btn) {
     if (top < 8) top = rect.bottom + 8;
     popup.style.left = left + 'px';
     popup.style.top  = top  + 'px';
+}
+
+function positionThemeBar() {
+    const bar   = document.getElementById('ppc-theme-bar');
+    const popup = document.getElementById('ppc-popup');
+    if (!bar || !popup || bar.style.display === 'none') return;
+    const pr   = popup.getBoundingClientRect();
+    const barW = bar.offsetWidth || pr.width;
+    // Align width and left to popup, position just above it
+    bar.style.width = pr.width + 'px';
+    bar.style.left  = pr.left + 'px';
+    bar.style.top   = (pr.top - bar.offsetHeight - 6) + 'px';
 }
 
 async function openPpcPopup() {
@@ -1091,12 +1123,9 @@ async function openPpcPopup() {
 
 function closePpcPopup() {
     const popup = document.getElementById('ppc-popup');
-    if (popup) {
-        popup.style.display = 'none';
-        // Hide theme bar when closing
-        const bar = popup.querySelector('#ppc-theme-bar');
-        if (bar) bar.style.display = 'none';
-    }
+    if (popup) popup.style.display = 'none';
+    const bar = document.getElementById('ppc-theme-bar');
+    if (bar) bar.style.display = 'none';
     closePpcSub();
     ppcIsOpen = false;
 }
@@ -1165,12 +1194,9 @@ function renderPpcLower() {
         e.stopPropagation();
         const bar = document.getElementById('ppc-theme-bar');
         if (!bar) return;
-        bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
-        const popupEl = document.getElementById('ppc-popup');
-        // Double RAF: first frame applies layout, second reads correct height
-        if (popupEl && ppcBtn) requestAnimationFrame(() =>
-            requestAnimationFrame(() => positionPpcPopup(popupEl, ppcBtn))
-        );
+        const opening = bar.style.display === 'none';
+        bar.style.display = opening ? 'flex' : 'none';
+        if (opening) requestAnimationFrame(() => positionThemeBar());
     });
 
     // Wire On/Off buttons
@@ -1430,8 +1456,9 @@ function injectPpcButton() {
         if (!ppcIsOpen) return;
         const popup = document.getElementById('ppc-popup');
         const sub   = document.getElementById('ppc-sub');
+        const bar   = document.getElementById('ppc-theme-bar');
         const subVisible = sub && sub.style.display !== 'none';
-        const outsideAll = !btn.contains(e.target) && !popup?.contains(e.target) && !sub?.contains(e.target);
+        const outsideAll = !btn.contains(e.target) && !popup?.contains(e.target) && !sub?.contains(e.target) && !bar?.contains(e.target);
         if (!outsideAll) return;
         if (subVisible) {
             closePpcSub();
