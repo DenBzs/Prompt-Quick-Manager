@@ -1,4 +1,4 @@
-// PromptQM — prompt-qm
+// PromptQM
 
 const extensionName   = 'Quick-Prompt-Manager';
 const GLOBAL_DUMMY_ID = 100001;
