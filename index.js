@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'prompt-qm';
+const extensionName   = 'Quick-Prompt-Manager';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -139,11 +139,11 @@ function applyPpcTheme() {
         sub.style.border     = 'none';
         sub.style.color      = t.sub.text;
     }
-    // Apply theme to standalone theme bar
-    const bar = document.getElementById('ppc-theme-bar');
+    // Apply theme to theme bar (inside popup)
+    const popup2 = document.getElementById('ppc-popup');
+    const bar = popup2?.querySelector('#ppc-theme-bar');
     if (bar) {
-        bar.style.background = t.popup.upper;
-        bar.style.color      = t.popup.text;
+        bar.style.background = t.popup.lower;
         bar.querySelectorAll('.ppc-theme-btn').forEach(btn => {
             const active = btn.dataset.theme === key;
             btn.style.background = active ? 'rgba(128,128,128,0.18)' : 'none';
@@ -1035,46 +1035,27 @@ function getOrCreatePpcPopup() {
     `;
     popup.innerHTML = `
         <div id="ppc-upper" style="background:#f5f0e8;padding:10px 15px;white-space:nowrap;"></div>
+        <div id="ppc-theme-bar" style="visibility:hidden;padding:5px 10px;display:flex;gap:2px;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(128,128,128,0.1);">
+            ${Object.entries(PPC_THEMES).map(([k,t]) =>
+                `<button class="ppc-theme-btn" data-theme="${k}"
+                    title="${t.title}"
+                    style="border:none;background:none;cursor:pointer;font-size:18px;padding:3px 5px;border-radius:6px;line-height:1.2;opacity:0.5;flex:1;text-align:center;">
+                    ${t.label}
+                </button>`
+            ).join('')}
+        </div>
         <div id="ppc-lower" style="background:#e8e2d8;padding:8px 14px;"></div>
     `;
-    document.body.appendChild(popup);
-
-    // Theme bar — separate fixed element, positioned above popup, never changes popup height
-    let themeBar = document.getElementById('ppc-theme-bar');
-    if (!themeBar) {
-        themeBar = document.createElement('div');
-        themeBar.id = 'ppc-theme-bar';
-        themeBar.style.cssText = `
-            display:none;
-            position:fixed;
-            z-index:2147483648;
-            border-radius:10px;
-            padding:5px 10px;
-            gap:2px;
-            align-items:center;
-            justify-content:space-between;
-            min-width:200px;
-            box-shadow:0 4px 16px rgba(0,0,0,0.15);
-            box-sizing:border-box;
-        `;
-        themeBar.innerHTML = Object.entries(PPC_THEMES).map(([k,t]) =>
-            `<button class="ppc-theme-btn" data-theme="${k}"
-                title="${t.title}"
-                style="border:none;background:none;cursor:pointer;font-size:18px;padding:3px 5px;border-radius:6px;line-height:1.2;opacity:0.5;flex:1;text-align:center;">
-                ${t.label}
-            </button>`
-        ).join('');
-        document.body.appendChild(themeBar);
-
-        themeBar.querySelectorAll('.ppc-theme-btn').forEach(btn => {
-            btn.addEventListener('click', e => {
-                e.stopPropagation();
-                setPpcTheme(btn.dataset.theme);
-                themeBar.style.display = 'none';
-            });
+    // Wire theme buttons
+    popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            setPpcTheme(btn.dataset.theme);
+            const bar = document.getElementById('ppc-theme-bar');
+            if (bar) bar.style.visibility = 'hidden';
         });
-        themeBar.addEventListener('click', e => e.stopPropagation());
-    }
+    });
+    document.body.appendChild(popup);
     return popup;
 }
 
@@ -1090,17 +1071,6 @@ function positionPpcPopup(popup, btn) {
     popup.style.top  = top  + 'px';
 }
 
-function positionThemeBar() {
-    const bar   = document.getElementById('ppc-theme-bar');
-    const popup = document.getElementById('ppc-popup');
-    if (!bar || !popup || bar.style.display === 'none') return;
-    const pr   = popup.getBoundingClientRect();
-    const barW = bar.offsetWidth || pr.width;
-    // Align width and left to popup, position just above it
-    bar.style.width = pr.width + 'px';
-    bar.style.left  = pr.left + 'px';
-    bar.style.top   = (pr.top - bar.offsetHeight - 6) + 'px';
-}
 
 async function openPpcPopup() {
     const popup = getOrCreatePpcPopup();
@@ -1125,7 +1095,7 @@ function closePpcPopup() {
     const popup = document.getElementById('ppc-popup');
     if (popup) popup.style.display = 'none';
     const bar = document.getElementById('ppc-theme-bar');
-    if (bar) bar.style.display = 'none';
+    if (bar) bar.style.visibility = 'hidden';
     closePpcSub();
     ppcIsOpen = false;
 }
@@ -1194,9 +1164,7 @@ function renderPpcLower() {
         e.stopPropagation();
         const bar = document.getElementById('ppc-theme-bar');
         if (!bar) return;
-        const opening = bar.style.display === 'none';
-        bar.style.display = opening ? 'flex' : 'none';
-        if (opening) requestAnimationFrame(() => positionThemeBar());
+        bar.style.visibility = bar.style.visibility === 'hidden' ? 'visible' : 'hidden';
     });
 
     // Wire On/Off buttons
@@ -1456,9 +1424,8 @@ function injectPpcButton() {
         if (!ppcIsOpen) return;
         const popup = document.getElementById('ppc-popup');
         const sub   = document.getElementById('ppc-sub');
-        const bar   = document.getElementById('ppc-theme-bar');
         const subVisible = sub && sub.style.display !== 'none';
-        const outsideAll = !btn.contains(e.target) && !popup?.contains(e.target) && !sub?.contains(e.target) && !bar?.contains(e.target);
+        const outsideAll = !btn.contains(e.target) && !popup?.contains(e.target) && !sub?.contains(e.target);
         if (!outsideAll) return;
         if (subVisible) {
             closePpcSub();
@@ -1515,6 +1482,41 @@ function setupPpcEvents() {
     }
 }
 
+
+// ══════════════════════════════════════════
+// MIGRATION — from prompt-toggle-manager
+// ══════════════════════════════════════════
+
+function migrateFromLegacy() {
+    try {
+        const LEGACY_KEY = 'prompt-toggle-manager';
+        const legacy = extension_settings[LEGACY_KEY];
+        if (!legacy?.presets) return; // nothing to migrate
+
+        const qpm = getTGStore();
+        let migratedGroups = 0;
+
+        for (const [presetName, groups] of Object.entries(legacy.presets)) {
+            if (!Array.isArray(groups) || !groups.length) continue;
+            if (!qpm.presets[presetName]) qpm.presets[presetName] = [];
+            const existing = new Set(qpm.presets[presetName].map(g => g.name));
+            for (const g of groups) {
+                if (existing.has(g.name)) continue; // skip duplicates
+                qpm.presets[presetName].push(g);
+                migratedGroups++;
+            }
+        }
+
+        if (migratedGroups > 0) {
+            saveSettingsDebounced();
+            toastr.success(`기존 확장에서 그룹 ${migratedGroups}개를 자동으로 가져왔습니다 ✅`);
+            console.log(`[${extensionName}] Migrated ${migratedGroups} groups from ${LEGACY_KEY}`);
+        }
+    } catch(e) {
+        console.warn(`[${extensionName}] Migration failed:`, e);
+    }
+}
+
 // ══════════════════════════════════════════
 // I. Mount & Init
 // ══════════════════════════════════════════
@@ -1533,6 +1535,7 @@ jQuery(async () => {
     console.log(`[${extensionName}] Loading...`);
     try {
         await initImports();
+        migrateFromLegacy();
         let c = 0;
         const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
         eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => renderTGGroups());
