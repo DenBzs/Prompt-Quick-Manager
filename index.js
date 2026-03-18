@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'Quick-Prompt-Manager';
+const extensionName   = 'test';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -191,17 +191,22 @@ function renderTGGroups() {
     const pn = getCurrentPreset();
     if (!pn) { area.innerHTML = '<div class="ptm-ph">프리셋이 선택되지 않았습니다</div>'; return; }
 
-    let validIds;
+    // Performance: call setupChatCompletionPromptManager ONCE, extract both
+    // validIds and allPrompts. Previously buildGroupCard called it again for
+    // every card (N+1 calls per render). Now it's always exactly 1 call.
+    let validIds, allPrompts;
     try {
         const pm = setupChatCompletionPromptManager(oai_settings);
         const order = (pm.serviceSettings?.prompt_order || [])
             .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
-        validIds = new Set((order?.order || []).map(e => e.identifier));
+        validIds   = new Set((order?.order || []).map(e => e.identifier));
+        allPrompts = pm.serviceSettings?.prompts || [];
     } catch(e) {
         const livePreset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
         const order = (livePreset?.prompt_order || [])
             .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
-        validIds = new Set((order?.order || []).map(e => e.identifier));
+        validIds   = new Set((order?.order || []).map(e => e.identifier));
+        allPrompts = livePreset?.prompts || [];
     }
     const groups = getGroupsForPreset(pn);
     let changed = false;
@@ -213,18 +218,19 @@ function renderTGGroups() {
     if (changed) saveGroups(pn, groups);
 
     if (!groups.length) { area.innerHTML = '<div class="ptm-ph">그룹이 없습니다</div>'; return; }
-    area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn)).join('');
+    area.innerHTML = groups.map((g, gi) => buildGroupCard(g, gi, pn, allPrompts)).join('');
     wireGroupCards(area);
 }
 
-function buildGroupCard(g, gi, pn) {
-    let allPrompts;
-    try {
-        const pm = setupChatCompletionPromptManager(oai_settings);
-        allPrompts = pm.serviceSettings?.prompts || [];
-    } catch(e) {
-        const preset = getLivePresetData(pn) || openai_settings[openai_setting_names[pn]];
-        allPrompts = preset?.prompts || [];
+// allPrompts passed in from renderTGGroups — no extra manager call needed.
+// Fallback handles any future direct callers.
+function buildGroupCard(g, gi, pn, allPrompts) {
+    if (!allPrompts) {
+        try {
+            allPrompts = setupChatCompletionPromptManager(oai_settings).serviceSettings?.prompts || [];
+        } catch(e) {
+            allPrompts = (getLivePresetData(pn) || openai_settings[openai_setting_names[pn]])?.prompts || [];
+        }
     }
     const inToggleReorder = toggleReorderMode === gi;
 
@@ -804,158 +810,114 @@ function wireTGReorder() {
     const area = document.getElementById('ptm-tg-area');
     if (!area) return;
 
-    let dragSrc  = null;
-    let dragOver = null;
-    let ghostEl  = null;
-    let rafId    = null;
-    let pendingX = 0, pendingY = 0;
+    // Smooth in-container drag using Pointer Events + CSS transform.
+    // - No ghost element, no document-level listeners, no RAF needed.
+    // - The dragged row slides up/down within its container via translateY.
+    // - Sibling rows smoothly shift out of the way with CSS transition.
+    // - setPointerCapture ensures move/up fire even if pointer leaves the area.
 
+    let drag = null; // { el, gi, fromTi, currentTi, rows, rowH }
 
-    function createGhost(row) {
-        const g = row.cloneNode(true);
-        const r = row.getBoundingClientRect();
-        g.style.cssText = `
-            position:fixed;pointer-events:none;z-index:2147483647;
-            opacity:0.82;border-radius:5px;
-            background:var(--SmartThemeBlurTintColor,rgba(40,40,40,0.95));
-            box-shadow:0 6px 18px rgba(0,0,0,0.35);
-            width:${r.width}px;
-            left:${r.left}px;top:${r.top}px;
-            will-change:transform;
-            transition:none;
-        `;
-        document.body.appendChild(g);
-        return g;
+    function getRows(gi) {
+        return [...area.querySelectorAll(`.ptm-trow[data-gi="${gi}"][data-draggable="true"]`)];
     }
 
-    function moveGhost(x, y) {
-        pendingX = x; pendingY = y;
-        if (rafId) return;
-        rafId = requestAnimationFrame(() => {
-            rafId = null;
-            if (!ghostEl) return;
-            ghostEl.style.left = (pendingX - ghostEl.offsetWidth / 2) + 'px';
-            ghostEl.style.top  = (pendingY - 20) + 'px';
+    function applyPositions(fromTi, toTi, rows, dragEl, rowH) {
+        rows.forEach((r, i) => {
+            if (r === dragEl) return;
+            let shift = 0;
+            if (fromTi < toTi) {
+                // Dragging down: rows between old↓new shift up by one slot
+                if (i > fromTi && i <= toTi) shift = -rowH;
+            } else {
+                // Dragging up: rows between new↑old shift down by one slot
+                if (i >= toTi && i < fromTi) shift = rowH;
+            }
+            r.style.transition = 'transform 0.12s ease';
+            r.style.transform  = shift ? `translateY(${shift}px)` : '';
         });
     }
 
-    function clearGhost() {
-        if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-        if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+    function resetStyles(rows) {
+        rows.forEach(r => {
+            r.style.transform  = '';
+            r.style.transition = '';
+            r.style.position   = '';
+            r.style.zIndex     = '';
+            r.style.opacity    = '';
+            r.style.boxShadow  = '';
+        });
     }
 
-    function highlightOver(ti) {
-        area.querySelectorAll('.ptm-trow').forEach(r => r.classList.remove('ptm-drag-over'));
-        if (ti == null) { dragOver = null; return; }
-        const target = area.querySelector(`.ptm-trow[data-ti="${ti}"][data-gi="${dragSrc?.gi}"]`);
-        if (target) { target.classList.add('ptm-drag-over'); dragOver = ti; }
-    }
-
-    function getRowAtPoint(x, y) {
-        // Temporarily hide ghost so elementsFromPoint can see elements underneath
-        if (ghostEl) ghostEl.style.visibility = 'hidden';
-        const els = document.elementsFromPoint(x, y);
-        if (ghostEl) ghostEl.style.visibility = '';
-        for (const el of els) {
-            const row = el.closest?.('.ptm-trow[data-draggable="true"]');
-            if (row && +row.dataset.gi === dragSrc?.gi) return row;
-        }
-        return null;
-    }
-
-
-    function endDrag(x, y) {
-        if (!dragSrc) return;
-        // Final hit-test at drop position
-        let toTi = dragOver;
-        if (x != null && y != null && toTi == null) {
-            const row = getRowAtPoint(x, y);
-            if (row && +row.dataset.gi === dragSrc.gi && +row.dataset.ti !== dragSrc.ti) {
-                toTi = +row.dataset.ti;
-            }
-        }
-        clearGhost();
-        highlightOver(null);
-        if (dragSrc.el) dragSrc.el.classList.remove('ptm-dragging');
-        const fromTi = dragSrc.ti;
-        const fromGi = dragSrc.gi;
-        dragSrc  = null;
-        dragOver = null;
-        if (toTi != null && toTi !== fromTi) {
-            const pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
-            const toggles = gs[fromGi].toggles;
-            const [moved] = toggles.splice(fromTi, 1);
-            toggles.splice(toTi, 0, moved);
-            saveGroups(pn, gs);
-            renderTGGroups();
-        }
-    }
-
-    // ── Mouse events ──
-    area.addEventListener('mousedown', e => {
+    area.addEventListener('pointerdown', e => {
         if (toggleReorderMode === null) return;
         const handle = e.target.closest('.ptm-drag-handle');
         if (!handle) return;
         const row = handle.closest('.ptm-trow[data-draggable="true"]');
         if (!row || +row.dataset.gi !== toggleReorderMode) return;
+
         e.preventDefault();
-        dragSrc = { gi: +row.dataset.gi, ti: +row.dataset.ti, el: row };
-        row.classList.add('ptm-dragging');
-        ghostEl = createGhost(row);
-        moveGhost(e.clientX, e.clientY);
+        const gi   = +row.dataset.gi;
+        const ti   = +row.dataset.ti;
+        const rows = getRows(gi);
+        const rowH = row.offsetHeight;
+
+        // Style the dragged row: lift it above siblings
+        row.style.position  = 'relative';
+        row.style.zIndex    = '10';
+        row.style.opacity   = '0.88';
+        row.style.boxShadow = '0 4px 12px rgba(0,0,0,0.28)';
+        row.style.transition = 'none';
+
+        drag = { el: row, gi, fromTi: ti, currentTi: ti, rows, rowH, startY: e.clientY };
+
+        // Capture pointer so pointermove/pointerup always fire on this element
+        area.setPointerCapture(e.pointerId);
     });
 
-    document.addEventListener('mousemove', e => {
-        if (!dragSrc) return;
-        moveGhost(e.clientX, e.clientY);
-        const row = getRowAtPoint(e.clientX, e.clientY);
-        if (row && +row.dataset.ti !== dragSrc.ti) {
-            highlightOver(+row.dataset.ti);
-        } else if (!row) {
-            highlightOver(null);
+    area.addEventListener('pointermove', e => {
+        if (!drag) return;
+        const { el, fromTi, currentTi, rows, rowH, startY } = drag;
+        const dy = e.clientY - startY;
+
+        // Clamp vertical movement to the group's list bounds
+        const maxUp   = -(fromTi * rowH);
+        const maxDown = (rows.length - 1 - fromTi) * rowH;
+        const clamped = Math.max(maxUp, Math.min(maxDown, dy));
+        el.style.transform = `translateY(${clamped}px)`;
+
+        // Determine which slot we're hovering over
+        const newTi = Math.max(0, Math.min(rows.length - 1,
+            fromTi + Math.round(dy / rowH)));
+
+        if (newTi !== currentTi) {
+            drag.currentTi = newTi;
+            applyPositions(fromTi, newTi, rows, el, rowH);
         }
     });
 
-    document.addEventListener('mouseup', e => {
-        if (!dragSrc) return;
-        endDrag(e.clientX, e.clientY);
-    });
+    function endDrag(e) {
+        if (!drag) return;
+        const { el, gi, fromTi, currentTi, rows } = drag;
+        drag = null;
 
-    // ── Touch events ──
-    area.addEventListener('touchstart', e => {
-        if (toggleReorderMode === null) return;
-        const touch = e.touches[0];
-        const handle = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.ptm-drag-handle');
-        if (!handle) return;
-        const row = handle.closest('.ptm-trow[data-draggable="true"]');
-        if (!row || +row.dataset.gi !== toggleReorderMode) return;
-        e.preventDefault();
-        dragSrc = { gi: +row.dataset.gi, ti: +row.dataset.ti, el: row };
-        row.classList.add('ptm-dragging');
-        ghostEl = createGhost(row);
-        moveGhost(touch.clientX, touch.clientY);
-    }, { passive: false });
+        // Remove pointer capture
+        try { area.releasePointerCapture(e.pointerId); } catch(_) {}
 
-    area.addEventListener('touchmove', e => {
-        if (!dragSrc) return;
-        e.preventDefault();
-        const touch = e.touches[0];
-        moveGhost(touch.clientX, touch.clientY);
-        const row = getRowAtPoint(touch.clientX, touch.clientY);
-        if (row && +row.dataset.ti !== dragSrc.ti) {
-            highlightOver(+row.dataset.ti);
-        } else if (!row) {
-            highlightOver(null);
+        resetStyles(rows);
+
+        if (currentTi !== fromTi) {
+            const pn = getCurrentPreset(), gs = getGroupsForPreset(pn);
+            const toggles = gs[gi].toggles;
+            const [moved] = toggles.splice(fromTi, 1);
+            toggles.splice(currentTi, 0, moved);
+            saveGroups(pn, gs);
+            renderTGGroups();
         }
-    }, { passive: false });
+    }
 
-    area.addEventListener('touchend', e => {
-        if (!dragSrc) return;
-        const touch = e.changedTouches[0];
-        endDrag(touch.clientX, touch.clientY);
-    });
-
-    area.addEventListener('touchcancel', () => endDrag(null, null));
+    area.addEventListener('pointerup',     endDrag);
+    area.addEventListener('pointercancel', endDrag);
 }
 
 // ══════════════════════════════════════════
@@ -1309,9 +1271,11 @@ function buildPpcSubHtml(gi) {
         const bClr = isDirect ? '#c0c0c0' : '#b0a0f0';
 
         const btnStyle = 'border:none;border-radius:3px;width:30px;min-width:30px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;letter-spacing:-0.3px;';
+        const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(200,200,200,0.1)';
+        const stClr = effectOn ? '#6dcc96'                 : '#999';
         return `
         <div style="display:flex;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,0.08);">
-            <span style="font-size:10px;width:22px;min-width:22px;height:18px;text-align:center;font-weight:700;color:${effectOn ? '#6dcc96' : '#999'};display:inline-flex;align-items:center;justify-content:center;">${effectOn ? 'On' : 'Off'}</span>
+            <span style="font-size:10px;width:26px;min-width:26px;height:18px;text-align:center;font-weight:700;border-radius:3px;background:${stBg};color:${stClr};display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">${effectOn ? 'On' : 'Off'}</span>
             <button class="ppc-sub-ovr" data-ti="${ti}"
                 style="${btnStyle}background:${ovrBg};color:${ovrClr};">
                 ${ovrLabel}
