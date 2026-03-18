@@ -1,0 +1,135 @@
+/* PromptDeck — style.css */
+
+/* ── Shared ── */
+.ptm-hidden{display:none!important}
+.ptm-ph{padding:12px;text-align:center;font-size:12px;opacity:.4}
+
+/* ── Layout blocks ── */
+.ptm-block{margin-bottom:10px}
+.ptm-label{display:block;font-size:12px;font-weight:600;opacity:.7;margin-bottom:4px}
+.ptm-lrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.ptm-lrow .ptm-label{margin-bottom:0}
+
+/* ── Inputs / selects ── */
+.ptm-sel{width:100%;padding:7px 8px;border-radius:6px;box-sizing:border-box;border:1px solid var(--SmartThemeBorderColor,#555);background:var(--SmartThemeBlurTintColor,#222);color:var(--SmartThemeBodyColor,#ddd);font-size:13px}
+.ptm-tinput{width:100%;padding:6px 10px;border-radius:6px;box-sizing:border-box;border:1px solid var(--SmartThemeBorderColor,#555);background:var(--SmartThemeBlurTintColor,#222);color:var(--SmartThemeBodyColor,#eee);font-size:13px}
+.ptm-tinput:focus{outline:none;border-color:#7a6fff}
+.ptm-tinput::placeholder{opacity:.4}
+
+/* ── Small utility buttons ── */
+.ptm-sm{padding:3px 10px;font-size:12px;cursor:pointer;margin-left:4px;border:1px solid var(--SmartThemeBorderColor,#555);border-radius:4px;background:transparent;color:var(--SmartThemeBodyColor,#ddd)}
+.ptm-sm:hover{background:rgba(255,255,255,.08)}
+.ptm-sm-full{display:block;width:100%;margin:8px 0 0;margin-left:0}
+
+/* ── Inline icon buttons ── */
+.ptm-ibtn{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 7px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0;border:1px solid var(--SmartThemeBorderColor,#555);border-radius:4px;background:transparent;color:var(--SmartThemeBodyColor,#ddd);box-sizing:border-box;line-height:1}
+.ptm-ibtn:hover{background:rgba(255,255,255,.08)}
+.ptm-danger{border-color:rgba(220,80,80,.5)!important;color:rgba(220,100,100,1)!important}
+.ptm-danger:hover{background:rgba(220,80,80,.12)!important}
+
+/* ── Copy / Move buttons ── */
+.ptm-brow{display:flex;gap:8px}
+.ptm-btn{flex:1;padding:9px;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s}
+.ptm-btn:disabled{opacity:.25;cursor:not-allowed}
+.ptm-btn:not(:disabled):hover{opacity:.82}
+.ptm-btn:not(:disabled):active{transform:scale(.97)}
+.ptm-btn-copy{background:#4a90d9;color:#fff}
+.ptm-btn-move{background:#d9724a;color:#fff}
+
+/* ── Mover lists ── */
+.ptm-list{border:1px solid var(--SmartThemeBorderColor,#444);border-radius:6px;background:rgba(0,0,0,.12);max-height:200px;overflow-y:auto}
+.ptm-list::-webkit-scrollbar{width:4px}
+.ptm-list::-webkit-scrollbar-thumb{background:var(--SmartThemeBorderColor,#555);border-radius:3px}
+.ptm-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;font-size:13px}
+.ptm-item:last-child{border-bottom:none}
+.ptm-item:hover{background:rgba(255,255,255,.04)}
+.ptm-chked{background:rgba(120,100,255,.15)!important}
+.ptm-item-off{opacity:.4}
+.ptm-chk{flex-shrink:0;accent-color:#7a6fff;cursor:pointer}
+.ptm-num{flex-shrink:0;font-size:11px;opacity:.35;width:26px;text-align:right}
+.ptm-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1;font-size:12px}
+.ptm-ditem{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:13px;opacity:.65;border-bottom:1px solid rgba(255,255,255,.04)}
+.ptm-slot{padding:3px;text-align:center;font-size:15px;cursor:pointer;opacity:.35;background:rgba(255,255,255,.01);border-bottom:1px dashed rgba(255,255,255,.06);transition:all .1s}
+.ptm-slot:hover{opacity:.85;background:rgba(120,100,255,.1);color:#a89fff}
+.ptm-slot-on{opacity:1!important;background:rgba(120,100,255,.25)!important;color:#c0b4ff!important;font-weight:700}
+.ptm-info{font-size:12px;opacity:.5;text-align:center;padding:4px 0;margin-bottom:6px}
+
+/* ── Group-after-copy block ── */
+.ptm-gblock{border:1px solid var(--SmartThemeBorderColor,#444);border-radius:7px;padding:8px 10px;background:rgba(120,100,255,.05)}
+.ptm-grow{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}
+.ptm-grow input[type=checkbox]{flex-shrink:0;width:16px;height:16px;accent-color:#7a6fff;cursor:pointer;margin:0}
+
+/* ══════════════════════════════════════════
+   Group cards
+   ══════════════════════════════════════════ */
+.ptm-card{border:1px solid var(--SmartThemeBorderColor,#444);border-radius:7px;margin-bottom:8px;background:rgba(0,0,0,.1);overflow:hidden}
+
+/* single-line header, no wrap */
+.ptm-card-head{display:flex;align-items:center;gap:5px;padding:6px 8px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--SmartThemeBorderColor,#333);flex-wrap:nowrap;min-width:0}
+
+.ptm-gname{flex:1 1 0;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptm-gcnt{font-size:11px;font-weight:400;opacity:.45}
+
+.ptm-gbtns{display:flex;gap:3px;align-items:center;flex-shrink:0}
+
+/* group On/Off */
+.ptm-onoff{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;height:24px;padding:0 10px;font-size:12px;font-weight:700;border:none!important;border-radius:4px;cursor:pointer;min-width:42px;box-sizing:border-box}
+.ptm-onoff-on{background:#3a9a5c!important;color:#fff!important}
+.ptm-onoff-off{background:rgba(255,255,255,.1)!important;color:var(--SmartThemeBodyColor,#bbb)!important}
+
+/* collapse */
+.ptm-collapse-grp{font-size:13px!important;padding:0 6px!important;opacity:.55;border-color:transparent!important}
+.ptm-collapse-grp:hover{opacity:1!important;border-color:var(--SmartThemeBorderColor,#555)!important}
+
+/* ▲▼ */
+.ptm-arr-disabled{opacity:.2!important;cursor:not-allowed!important}
+
+/* "팝업" toggle button */
+.ptm-popup-btn{font-size:10px!important;padding:0 5px!important;opacity:.4;border-style:dashed;font-weight:600!important}
+.ptm-popup-btn:hover{opacity:.85!important}
+.ptm-popup-btn-on{opacity:1!important;border-style:solid!important;border-color:rgba(120,100,255,.7)!important;color:#b0a8ff!important;background:rgba(120,100,255,.18)!important}
+
+/* ══════════════════════════════════════════
+   Toggle rows — strict fixed widths eliminate wobble
+   ══════════════════════════════════════════ */
+.ptm-tlist{padding:2px 0}
+
+.ptm-trow{display:flex;align-items:center;gap:4px;padding:4px 8px;border-bottom:1px solid rgba(255,255,255,.04);min-width:0;box-sizing:border-box}
+.ptm-trow:last-child{border-bottom:none}
+.ptm-trow.ptm-drag-over{outline:2px solid #7a6fff;outline-offset:-2px;background:rgba(120,100,255,.12)!important}
+.ptm-trow.ptm-dragging{opacity:.35}
+
+/* col 1 — state pill OR drag handle: fixed 30px */
+.ptm-tstate{flex:0 0 30px;width:30px;font-size:10px;font-weight:700;border-radius:3px;text-align:center;height:24px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
+.ptm-ts-on{background:rgba(58,154,92,.3);color:#6ddb9e}
+.ptm-ts-off{background:rgba(255,255,255,.07);color:var(--SmartThemeBodyColor,#999)}
+
+/* col 2 — override button: fixed 30px */
+.ptm-tovr{flex:0 0 30px;width:30px;height:24px;font-size:9px!important;font-weight:700!important;padding:0 2px;text-align:center}
+.ptm-tovr-lock{opacity:.55}
+.ptm-tovr-on{border-color:rgba(58,154,92,.6)!important;color:#6ddb9e!important;background:rgba(58,154,92,.15)!important}
+.ptm-tovr-off{border-color:rgba(200,80,80,.5)!important;color:rgba(220,110,110,1)!important;background:rgba(200,80,80,.1)!important}
+
+/* col 3 — name: fills remaining space */
+.ptm-tname{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+
+/* col 4 — behavior button (동일/반전): fixed 30px */
+.ptm-bsel{flex:0 0 30px;width:30px;height:24px;font-size:9px!important;font-weight:700!important;padding:0 2px;text-align:center}
+.ptm-bsel-dir{opacity:.5}
+.ptm-bsel-inv{border-color:rgba(120,100,255,.6)!important;color:#a89fff!important;background:rgba(120,100,255,.15)!important}
+
+/* col 5 — delete: fixed 24px */
+.ptm-del-toggle{flex:0 0 24px;width:24px;padding:0!important;justify-content:center}
+
+/* drag handle (replaces state pill in reorder mode, same 30px slot) */
+.ptm-drag-handle{flex:0 0 30px;width:30px;cursor:grab;font-size:15px;opacity:.5;user-select:none;line-height:1;touch-action:none;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
+.ptm-drag-handle:hover{opacity:.9}
+.ptm-drag-handle:active{cursor:grabbing}
+
+/* ══════════════════════════════════════════
+   PPC popup & sub-popup
+   ══════════════════════════════════════════ */
+#ppc-popup,#ppc-sub{box-sizing:border-box;font-family:inherit}
+#ppc-sub::-webkit-scrollbar{width:4px}
+#ppc-sub::-webkit-scrollbar-track{background:transparent}
+#ppc-sub::-webkit-scrollbar-thumb{background:rgba(0,0,0,.2);border-radius:2px}
