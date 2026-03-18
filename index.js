@@ -141,7 +141,7 @@ function applyPpcTheme() {
     }
     // Apply theme to theme bar (inside popup)
     const popup2 = document.getElementById('ppc-popup');
-    const bar = popup2?.querySelector('#ppc-theme-bar');
+    const bar = popup2 ? popup2.querySelector('#ppc-theme-bar') : null;
     if (bar) {
         bar.style.background = t.popup.lower;
         bar.querySelectorAll('.ppc-theme-btn').forEach(btn => {
@@ -1035,7 +1035,8 @@ function getOrCreatePpcPopup() {
     `;
     popup.innerHTML = `
         <div id="ppc-upper" style="background:#f5f0e8;padding:10px 15px;white-space:nowrap;"></div>
-        <div id="ppc-theme-bar" style="visibility:hidden;padding:5px 10px;display:flex;gap:2px;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(128,128,128,0.1);">
+        <div id="ppc-lower" style="background:#e8e2d8;padding:8px 14px;"></div>
+        <div id="ppc-theme-bar" style="display:none;padding:5px 10px;gap:2px;align-items:center;justify-content:space-between;">
             ${Object.entries(PPC_THEMES).map(([k,t]) =>
                 `<button class="ppc-theme-btn" data-theme="${k}"
                     title="${t.title}"
@@ -1044,7 +1045,6 @@ function getOrCreatePpcPopup() {
                 </button>`
             ).join('')}
         </div>
-        <div id="ppc-lower" style="background:#e8e2d8;padding:8px 14px;"></div>
     `;
     // Wire theme buttons
     popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
@@ -1052,7 +1052,7 @@ function getOrCreatePpcPopup() {
             e.stopPropagation();
             setPpcTheme(btn.dataset.theme);
             const bar = document.getElementById('ppc-theme-bar');
-            if (bar) bar.style.visibility = 'hidden';
+            if (bar) bar.style.display = 'none';
         });
     });
     document.body.appendChild(popup);
@@ -1095,7 +1095,7 @@ function closePpcPopup() {
     const popup = document.getElementById('ppc-popup');
     if (popup) popup.style.display = 'none';
     const bar = document.getElementById('ppc-theme-bar');
-    if (bar) bar.style.visibility = 'hidden';
+    if (bar) bar.style.display = 'none';
     closePpcSub();
     ppcIsOpen = false;
 }
@@ -1164,7 +1164,7 @@ function renderPpcLower() {
         e.stopPropagation();
         const bar = document.getElementById('ppc-theme-bar');
         if (!bar) return;
-        bar.style.visibility = bar.style.visibility === 'hidden' ? 'visible' : 'hidden';
+        bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
     });
 
     // Wire On/Off buttons
