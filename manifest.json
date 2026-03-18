@@ -1,0 +1,13 @@
+{
+    "display_name": "PromptDeck",
+    "loading_order": 5,
+    "requires": [],
+    "optional": [],
+    "dependencies": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "",
+    "version": "1.0.0",
+    "homePage": "https://github.com/your-username/prompt-deck",
+    "auto_update": false
+}
