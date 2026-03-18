@@ -1,6 +1,6 @@
-// prompt-toggle-manager  (+ preset-profile-check, merged)
+// PromptQM — prompt-qm
 
-const extensionName   = 'prompt-deck';
+const extensionName   = 'prompt-qm';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -83,15 +83,15 @@ const PPC_THEMES = {
     sky: {
         label: '🩵',
         title: '스카이',
-        popup:  { upper:'#f6fdff', lower:'#e8f7ff', text:'#143450', shadow:'0 4px 18px rgba(40,120,200,0.11)' },
-        sub:    { bg:'#f6fdff', text:'#143450' },
+        popup:  { upper:'#f8feff', lower:'#edf9ff', text:'#143450', shadow:'0 4px 18px rgba(40,120,200,0.10)' },
+        sub:    { bg:'#f8feff', text:'#143450' },
         rowBorder:'rgba(40,120,200,0.1)',
     },
     pink: {
         label: '🩷',
         title: '핑크',
-        popup:  { upper:'#fff4f7', lower:'#fce6ee', text:'#3c1830', shadow:'0 4px 18px rgba(200,70,110,0.12)' },
-        sub:    { bg:'#fff4f7', text:'#3c1830' },
+        popup:  { upper:'#fff7fa', lower:'#fdedf4', text:'#3c1830', shadow:'0 4px 18px rgba(200,70,110,0.09)' },
+        sub:    { bg:'#fff7fa', text:'#3c1830' },
         rowBorder:'rgba(200,70,110,0.1)',
     },
     classic: {
@@ -130,8 +130,10 @@ function applyPpcTheme() {
         if (bar)   bar.style.background   = t.popup.lower;
         popup.querySelectorAll('.ppc-theme-btn').forEach(btn => {
             const active = btn.dataset.theme === key;
-            btn.style.outline       = active ? `2px solid ${t.popup.text}` : 'none';
-            btn.style.outlineOffset = '1px';
+            btn.style.outline       = 'none';
+            btn.style.background    = active ? 'rgba(128,128,128,0.18)' : 'none';
+            btn.style.borderRadius  = '6px';
+            btn.style.transform     = active ? 'scale(1.18)' : 'scale(1)';
             btn.style.opacity       = active ? '1' : '0.45';
         });
     }
