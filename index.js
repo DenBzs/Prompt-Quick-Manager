@@ -1,6 +1,6 @@
 // prompt-toggle-manager  (+ preset-profile-check, merged)
 
-const extensionName   = 'prompt-deck';
+const extensionName   = 'Quick-Prompt-Manager';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
