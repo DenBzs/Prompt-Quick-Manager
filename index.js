@@ -376,7 +376,7 @@ function wireGroupCards(area) {
 
 // ── Add toggle modal ──────────────────────────────────────────────────────────
 async function showAddToggleModal(gi) {
-    const pn = getCurrentPreset(), preset = openai_settings[openai_setting_names[pn]];
+    const pn = getCurrentPreset(), preset = getLivePresetData(pn);
     if (!preset) return;
     const gs = getGroupsForPreset(pn), exists = new Set(gs[gi].toggles.map(t => t.target));
     const prompts = preset.prompts || [];
