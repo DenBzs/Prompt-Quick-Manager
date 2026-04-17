@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'Quick-Prompt-Manager';
+const extensionName   = 'Prompt-Quick-Manager';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
@@ -208,11 +208,16 @@ function renderTGGroups() {
         validIds   = new Set((order?.order || []).map(e => e.identifier));
         allPrompts = livePreset?.prompts || [];
     }
+    // Use the actual prompts array as the source of truth.
+    // validIds (from prompt_order) can still contain stale entries for prompts
+    // that have already been deleted from the prompts array, so we filter
+    // against allPromptIds instead to keep toggle groups in sync.
+    const allPromptIds = new Set(allPrompts.map(p => p.identifier));
     const groups = getGroupsForPreset(pn);
     let changed = false;
     groups.forEach(g => {
         const before = g.toggles.length;
-        g.toggles = g.toggles.filter(t => validIds.has(t.target));
+        g.toggles = g.toggles.filter(t => allPromptIds.has(t.target));
         if (g.toggles.length !== before) changed = true;
     });
     if (changed) saveGroups(pn, groups);
@@ -466,10 +471,21 @@ function getPromptOrder(preset) {
     return preset.prompt_order.find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID))?.order || [];
 }
 function getOrderedPrompts(preset) {
-    return getPromptOrder(preset).map(e => {
-        const def = (preset?.prompts || []).find(p => p.identifier === e.identifier);
-        return { identifier: e.identifier, enabled: e.enabled, prompt: def || { identifier: e.identifier, name: e.identifier } };
-    });
+    const prompts = preset?.prompts || [];
+    const order   = getPromptOrder(preset);
+    const inOrder = new Set(order.map(e => e.identifier));
+
+    // Start with prompts that appear in prompt_order (preserves user ordering).
+    // Filter out any that no longer exist in the prompts array (deleted).
+    const ordered = order
+        .map(e => {
+            const def = prompts.find(p => p.identifier === e.identifier);
+            if (!def) return null; // deleted — skip
+            return { identifier: e.identifier, enabled: e.enabled, prompt: def };
+        })
+        .filter(Boolean);
+
+    return ordered;
 }
 function getLivePresetData(presetName) {
     if (!presetName) return null;
@@ -574,7 +590,6 @@ function renderSrcList() {
     const el = document.getElementById('ptm-src-list'); if (!el) return;
     if (!sourceOrderedPrompts.length) { el.innerHTML = '<div class="ptm-ph">프롬프트 없음</div>'; return; }
     el.innerHTML = sourceOrderedPrompts.map((e, i) => {
-        // Bug fix: use ?? for name
         const name = e.prompt.name ?? '', chk = selectedSourceIndices.has(i);
         return `<label class="ptm-item${!e.enabled ? ' ptm-item-off' : ''}${chk ? ' ptm-chked' : ''}">
             <input type="checkbox" class="ptm-chk" data-i="${i}"${chk ? ' checked' : ''}><span class="ptm-num">#${i + 1}</span>
@@ -639,13 +654,21 @@ async function performOperation(isMove) {
     const tp = JSON.parse(JSON.stringify(openai_settings[dstIdx]));
     tp.prompts = tp.prompts || []; tp.prompt_order = tp.prompt_order || [];
     const existingIds = new Set(tp.prompts.map(p => p.identifier)), newIds = [];
+    // Resolve visual insertPosition to raw index in go.order.
+    // targetOrderedPrompts is stale-filtered, so direct index reuse is wrong.
+    const go = tp.prompt_order.find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
+    const baseInsertIdx = (() => {
+        if (!go?.order || insertPosition === 0) return 0;
+        const beforeId = targetOrderedPrompts[insertPosition - 1]?.identifier;
+        const rawIdx = beforeId ? go.order.findIndex(e => e.identifier === beforeId) : -1;
+        return rawIdx >= 0 ? rawIdx + 1 : go.order.length;
+    })();
     selected.forEach((entry, offset) => {
         const pd = JSON.parse(JSON.stringify(entry.prompt));
         let id = pd.identifier;
         if (existingIds.has(id)) { let c = 1, base = id.replace(/_\d+$/, ''); while (existingIds.has(`${base}_${c}`)) c++; id = `${base}_${c}`; pd.identifier = id; pd.name = `${pd.name || entry.identifier} (${c})`; }
         existingIds.add(id); newIds.push(id); tp.prompts.push(pd);
-        const go = tp.prompt_order.find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
-        if (go?.order) go.order.splice(insertPosition + offset, 0, { identifier: id, enabled: true });
+        if (go?.order) go.order.splice(baseInsertIdx + offset, 0, { identifier: id, enabled: true });
         else tp.prompt_order.push({ character_id: GLOBAL_DUMMY_ID, order: [{ identifier: id, enabled: true }] });
         for (const oe of tp.prompt_order) if (String(oe.character_id) !== String(GLOBAL_DUMMY_ID) && oe.order) oe.order.push({ identifier: id, enabled: true });
     });
@@ -685,12 +708,32 @@ async function performSamePresetMove(n, makeGroup, groupName) {
     for (const oe of (sp.prompt_order || [])) {
         if (!oe.order) continue;
         const isGlobal = String(oe.character_id) === String(GLOBAL_DUMMY_ID);
-        let removedBefore = 0;
-        for (let i = 0; i < insertPosition && i < oe.order.length; i++) {
-            if (selectedSet.has(oe.order[i].identifier)) removedBefore++;
-        }
         const filtered = oe.order.filter(e => !selectedSet.has(e.identifier));
-        const adjPos = Math.max(0, Math.min(insertPosition - removedBefore, filtered.length));
+        let adjPos;
+        if (isGlobal) {
+            // Resolve visual insertPosition to index in filtered (stale-safe, handles selected anchors).
+            if (insertPosition === 0) {
+                adjPos = 0;
+            } else {
+                let anchorId = null;
+                for (let vi = insertPosition - 1; vi >= 0; vi--) {
+                    const id = sourceOrderedPrompts[vi]?.identifier;
+                    if (id && !selectedSet.has(id)) { anchorId = id; break; }
+                }
+                if (anchorId) {
+                    const idx = filtered.findIndex(e => e.identifier === anchorId);
+                    adjPos = idx >= 0 ? idx + 1 : filtered.length;
+                } else {
+                    adjPos = 0;
+                }
+            }
+        } else {
+            let removedBefore = 0;
+            for (let i = 0; i < insertPosition && i < oe.order.length; i++) {
+                if (selectedSet.has(oe.order[i].identifier)) removedBefore++;
+            }
+            adjPos = Math.max(0, Math.min(insertPosition - removedBefore, filtered.length));
+        }
         const toInsert = isGlobal
             ? selected.map(e => ({ identifier: e.identifier, enabled: e.enabled }))
             : selected.map(e => ({ identifier: e.identifier, enabled: true }));
@@ -1445,6 +1488,11 @@ function migrateFromLegacy() {
         if (!legacy?.presets) return; // nothing to migrate
 
         const qpm = getTGStore();
+
+        // If migration was already completed once, skip entirely.
+        // This prevents deleted groups from being re-imported on every reload.
+        if (qpm.migrationDone) return;
+
         let migratedGroups = 0;
 
         for (const [presetName, groups] of Object.entries(legacy.presets)) {
@@ -1458,8 +1506,11 @@ function migrateFromLegacy() {
             }
         }
 
+        // Mark migration as done so it never runs again
+        qpm.migrationDone = true;
+        saveSettingsDebounced();
+
         if (migratedGroups > 0) {
-            saveSettingsDebounced();
             toastr.success(`기존 확장에서 그룹 ${migratedGroups}개를 자동으로 가져왔습니다 ✅`);
             console.log(`[${extensionName}] Migrated ${migratedGroups} groups from ${LEGACY_KEY}`);
         }
@@ -1471,6 +1522,13 @@ function migrateFromLegacy() {
 // ══════════════════════════════════════════
 // I. Mount & Init
 // ══════════════════════════════════════════
+
+function applyAllGroups() {
+    const pn = getCurrentPreset();
+    if (!pn) return;
+    const groups = getGroupsForPreset(pn);
+    groups.forEach((_, gi) => applyGroup(pn, gi));
+}
 
 function mount() {
     if (document.getElementById('ptm-mover-drawer')) return true;
@@ -1489,8 +1547,8 @@ jQuery(async () => {
         migrateFromLegacy();
         let c = 0;
         const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
-        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => renderTGGroups());
-        eventSource.on(event_types.APP_READY, () => injectPpcButton());
+        eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { renderTGGroups(); applyAllGroups(); });
+        eventSource.on(event_types.APP_READY, () => { injectPpcButton(); applyAllGroups(); });
         setupPpcEvents();
         console.log(`[${extensionName}] Loaded`);
     } catch(err) { console.error(`[${extensionName}] Failed:`, err); }
