@@ -281,6 +281,7 @@ function buildGroupCard(g, gi, pn, allPrompts) {
             <div class="ptm-gbtns">
                 ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-ren-grp" data-gi="${gi}">✏️</button>` : ''}
                 ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-reorder-grp-btn" data-gi="${gi}" title="토글 순서 변경">⠿</button>` : ''}
+                ${!groupReorderMode && !inToggleReorder && !isCollapsed ? `<button class="ptm-ibtn ptm-copy-grp" data-gi="${gi}" title="다른 프롬프트로 그룹 복사">📋</button>` : ''}
                 ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-ibtn ptm-popup-pin${g.showInPopup ? ' ptm-pin-active' : ''}" data-gi="${gi}" title="미니창에 표시" style="${g.showInPopup ? 'opacity:1;background:rgba(160,144,232,0.25);color:#b0a0f0;' : 'opacity:0.35;'}">📌</button>` : ''}
                 ${!groupReorderMode && !inToggleReorder ? `<button class="ptm-ibtn ptm-danger ptm-del-grp" data-gi="${gi}">✕</button>` : ''}
                 ${inToggleReorder ? `<button class="ptm-ibtn ptm-toggle-reorder-done" data-gi="${gi}" style="color:#6ddb9e">✓</button>` : ''}
@@ -368,6 +369,11 @@ function wireGroupCards(area) {
     area.querySelectorAll('.ptm-add-toggle').forEach(btn => btn.addEventListener('click', () => {
         showAddToggleModal(+btn.dataset.gi);
     }));
+    // 그룹 복사 버튼
+    area.querySelectorAll('.ptm-copy-grp').forEach(btn => btn.addEventListener('click', e => {
+        e.stopPropagation();
+        copyGroupToPreset(+btn.dataset.gi);
+    }));
     // 팝업 핀 토글 버튼
     area.querySelectorAll('button.ptm-popup-pin').forEach(btn => btn.addEventListener('click', e => {
         e.stopPropagation();
@@ -377,6 +383,135 @@ function wireGroupCards(area) {
         refreshPpcPopup();
         renderTGGroups();
     }));
+}
+
+// ── Copy group to another preset ─────────────────────────────────────────────
+async function copyGroupToPreset(gi) {
+    const pn = getCurrentPreset();
+    const gs = getGroupsForPreset(pn);
+    const sourceGroup = gs[gi];
+    if (!sourceGroup) return;
+
+    // Build identifier → name map from the source preset
+    const srcPreset = getLivePresetData(pn);
+    const srcPrompts = srcPreset?.prompts || [];
+    const idToName = new Map(srcPrompts.map(p => [p.identifier, p.name ?? '']));
+
+    // Build target preset selector (exclude current preset)
+    const presetOpts = Object.keys(openai_setting_names)
+        .filter(n => n !== pn && openai_settings[openai_setting_names[n]])
+        .map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+        .join('');
+    if (!presetOpts) { toastr.warning('복사할 다른 프리셋이 없습니다'); return; }
+
+    // Default to first option in case user never touches the select
+    let selectedDst = Object.keys(openai_setting_names)
+        .find(n => n !== pn && openai_settings[openai_setting_names[n]]) || '';
+
+    const html = `
+        <div style="margin-bottom:10px">
+            <label style="font-size:12px;opacity:0.7;display:block;margin-bottom:4px">그룹을 붙여넣을 프롬프트:</label>
+            <select id="ptm-cg-dst" style="width:100%;padding:6px;border-radius:6px;box-sizing:border-box">
+                ${presetOpts}
+            </select>
+        </div>
+        <div style="font-size:11px;opacity:0.6">
+            토글 ${sourceGroup.toggles.length}개 · 이름이 일치하는 프롬프트에 자동 연결됩니다
+        </div>`;
+
+    // Capture select value while popup is open (DOM is gone after await resolves)
+    const observer = new MutationObserver(() => {
+        const sel = document.getElementById('ptm-cg-dst');
+        if (sel && !sel._ptmWired) {
+            sel._ptmWired = true;
+            selectedDst = sel.value;
+            sel.addEventListener('change', () => { selectedDst = sel.value; });
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    const ok = await callGenericPopup(html, POPUP_TYPE.CONFIRM, '', { okButton: '복사', cancelButton: '취소' });
+    observer.disconnect();
+    if (!ok) return;
+
+    const dstPresetName = selectedDst;
+    if (!dstPresetName) return;
+
+    const dstPreset = getLivePresetData(dstPresetName);
+    if (!dstPreset) { toastr.error('대상 프리셋을 불러올 수 없습니다'); return; }
+
+    // Build name → identifier map for the target preset
+    const dstPrompts = dstPreset.prompts || [];
+    const nameToId = new Map(dstPrompts.map(p => [p.name ?? '', p.identifier]));
+
+    // Match each toggle by prompt name
+    const matched = [], unmatched = [];
+    for (const t of sourceGroup.toggles) {
+        const name  = idToName.get(t.target) ?? '';
+        const dstId = nameToId.get(name);
+        if (dstId) {
+            matched.push({ target: dstId, behavior: t.behavior, override: t.override });
+        } else {
+            unmatched.push(name || t.target);
+        }
+    }
+
+    if (matched.length === 0) {
+        toastr.error('대상 프롬프트에 이름이 일치하는 토글이 없습니다');
+        return;
+    }
+
+    // Check for an existing group with the same name in target
+    const dstGroups   = getGroupsForPreset(dstPresetName);
+    const existingIdx = dstGroups.findIndex(g => g.name === sourceGroup.name);
+    let finalName     = sourceGroup.name;
+    let shouldOverwrite = false;
+
+    if (existingIdx >= 0) {
+        // callGenericPopup: ok = true → 덮어쓰기, ok = false/null → 새로 만들기
+        const choice = await callGenericPopup(
+            `"${sourceGroup.name}" 그룹이 이미 존재합니다. 어떻게 할까요?`,
+            POPUP_TYPE.CONFIRM, '',
+            { okButton: '덮어쓰기', cancelButton: '새로 만들기' }
+        );
+        if (choice === null) return; // popup closed (X 버튼)
+        if (choice) {
+            shouldOverwrite = true;
+        } else {
+            let c = 2;
+            while (dstGroups.some(g => g.name === `${sourceGroup.name} (${c})`)) c++;
+            finalName = `${sourceGroup.name} (${c})`;
+        }
+    }
+
+    // Build and save the new group
+    const newGroup = {
+        name:        finalName,
+        isOn:        sourceGroup.isOn,
+        showInPopup: sourceGroup.showInPopup ?? false,
+        toggles:     matched,
+    };
+
+    if (shouldOverwrite) {
+        dstGroups[existingIdx] = newGroup;
+    } else {
+        dstGroups.push(newGroup);
+    }
+    saveGroups(dstPresetName, dstGroups);
+
+    // Refresh UI if target == current preset
+    if (dstPresetName === pn) { renderTGGroups(); refreshPpcPopup(); }
+
+    // Result toast
+    if (unmatched.length > 0) {
+        const preview = unmatched.slice(0, 3).join(', ') + (unmatched.length > 3 ? ` 외 ${unmatched.length - 3}개` : '');
+        toastr.warning(
+            `"${finalName}" 복사 완료 — ${matched.length}개 연결, ${unmatched.length}개 미일치 스킵\n(${preview})`,
+            '', { timeOut: 6000 }
+        );
+    } else {
+        toastr.success(`"${finalName}" 그룹이 [${dstPresetName}]에 복사됐습니다 (${matched.length}개 연결)`);
+    }
 }
 
 // ── Add toggle modal ──────────────────────────────────────────────────────────
