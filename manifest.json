@@ -7,7 +7,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "",
-    "version": "1.1",
+    "version": "1.1.0",
     "homePage": "https://github.com/DenBzs/Prompt-Quick-Manager",
     "auto_update": false
 }
