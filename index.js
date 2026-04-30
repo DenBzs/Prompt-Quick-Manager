@@ -43,6 +43,47 @@ const collapsedGroups = new Set();
 let groupReorderMode  = false;
 let toggleReorderMode = null;
 
+// [추가됨] 폴링 관련 글로벌 변수
+let _ptmPollTimer  = null;
+let _ptmLastPtState = '';
+
+// [추가됨] 문자열 정렬 가중치 함수
+function getCharOrder(str) {
+    const ch = str?.[0] ?? '';
+    if (!ch) return 0;
+    const cp = ch.codePointAt(0);
+    if (cp > 0x1F000) return 0;
+    if (cp < 0x30) return 0;
+    if (cp >= 0xAC00 && cp <= 0xD7A3) return 2;
+    if (cp >= 0x4E00 && cp <= 0x9FFF) return 5;
+    if (cp >= 0x3040 && cp <= 0x30FF) return 4;
+    if (cp >= 0x41 && cp <= 0x7A) return 3;
+    return 1;
+}
+
+// [추가됨] 프롬프트 매니저 상태 폴링 함수
+function startPtmPoll() {
+    if (_ptmPollTimer) return;
+    _ptmPollTimer = setInterval(() => {
+        const area = document.getElementById('ptm-tg-area');
+        if (!area) return;
+        try {
+            const pm = setupChatCompletionPromptManager(oai_settings);
+            const order = (pm.serviceSettings?.prompt_order || [])
+                .find(o => String(o.character_id) === String(GLOBAL_DUMMY_ID));
+            const snapshot = JSON.stringify((order?.order || []).map(e => [e.identifier, e.enabled]));
+            if (snapshot !== _ptmLastPtState) {
+                _ptmLastPtState = snapshot;
+                renderTGGroups();
+            }
+        } catch(_) {}
+    }, 500);
+}
+
+function stopPtmPoll() {
+    if (_ptmPollTimer) { clearInterval(_ptmPollTimer); _ptmPollTimer = null; }
+}
+
 function getTGStore() {
     if (!extension_settings[TG_KEY]) extension_settings[TG_KEY] = { presets: {} };
     return extension_settings[TG_KEY];
@@ -278,7 +319,6 @@ function buildGroupCard(g, gi, pn, allPrompts, ptStateMap) {
         else if (ovr === true) { ovrLabel = 'On';  ovrCls = 'ptm-tovr-on';  }
         else                   { ovrLabel = 'Off'; ovrCls = 'ptm-tovr-off'; }
 
-        // 수정: Off 상태일 때 잔잔한 붉은색 강제 지정
         return `
         <div class="ptm-trow" ${inToggleReorder ? 'data-draggable="true"' : ''} data-gi="${gi}" data-ti="${ti}">
             ${inToggleReorder
@@ -547,9 +587,14 @@ async function showAddToggleModal(gi) {
     const pn = getCurrentPreset(), preset = getLivePresetData(pn);
     if (!preset) return;
     const gs = getGroupsForPreset(pn), exists = new Set(gs[gi].toggles.map(t => t.target));
-    const prompts = [...(preset.prompts || [])].sort((a, b) =>
-        (a.name ?? '').localeCompare(b.name ?? '', 'ko'));
     const selectedMap = new Map();
+
+    // [수정됨] 프롬프트 정렬 시 getCharOrder를 통한 향상된 정렬 로직 적용
+    const prompts = [...(preset.prompts || [])].sort((a, b) => {
+        const oa = getCharOrder(a.name), ob = getCharOrder(b.name);
+        if (oa !== ob) return oa - ob;
+        return (a.name ?? '').localeCompare(b.name ?? '', 'ko');
+    });
 
     const listHtml = prompts.map((p, idx) => {
         const ex = exists.has(p.identifier);
@@ -1003,6 +1048,19 @@ function wireTG() {
         renderTGGroups();
     });
     wireTGReorder();
+
+    // [추가됨] 서랍 열림/닫힘 감지 → 폴링 시작/중지
+    const tgToggle = document.querySelector('#ptm-tg-drawer .inline-drawer-toggle');
+    if (tgToggle) {
+        tgToggle.addEventListener('click', () => {
+            const content = document.querySelector('#ptm-tg-drawer .inline-drawer-content');
+            setTimeout(() => {
+                const isOpen = content && content.style.display !== 'none';
+                if (isOpen) startPtmPoll();
+                else stopPtmPoll();
+            }, 50);
+        });
+    }
 }
 
 function wireTGReorder() {
@@ -1461,7 +1519,6 @@ function buildPpcSubHtml(gi) {
 
         const btnStyle = 'border:none;border-radius:3px;width:30px;min-width:30px;height:18px;font-size:10px;font-weight:700;cursor:pointer;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;white-space:nowrap;letter-spacing:-0.3px;';
         
-        // 수정: Off 상태일 때 잔잔한 붉은색 강제 지정
         const stBg  = effectOn ? 'rgba(90,184,130,0.2)'   : 'rgba(168,79,79,0.25)';
         const stClr = effectOn ? '#6dcc96'                 : '#d07070';
         return `
@@ -1723,7 +1780,6 @@ jQuery(async () => {
         let c = 0;
         const t = setInterval(() => { if (mount() || ++c > 50) clearInterval(t); }, 200);
         
-        // 원본: 단일 라인 이벤트 핸들러로 복구 완료
         eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => { renderTGGroups(); applyAllGroups(); });
 
         eventSource.on(event_types.APP_READY, () => { injectPpcButton(); applyAllGroups(); });
