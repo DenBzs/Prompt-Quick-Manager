@@ -1,6 +1,6 @@
 // PromptQM — prompt-qm
 
-const extensionName   = 'Ptest';
+const extensionName   = 'Prompt-Quick-Manager';
 const GLOBAL_DUMMY_ID = 100001;
 const TG_KEY          = extensionName;
 
