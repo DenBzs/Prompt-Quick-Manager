@@ -174,7 +174,7 @@ function setPpcEnabled(val) {
 }
 function updatePpcBtnVisibility() {
     const enabled = getPpcEnabled();
-    const btn = document.getElementById('ppc-btn');
+    const btn = document.getElementById('pqm-plug-btn');
     if (btn) btn.style.display = enabled ? '' : 'none';
     const tglBtn = document.getElementById('ptm-ppc-enable-btn');
     if (tglBtn) {
@@ -1600,12 +1600,12 @@ function wirePpcSub(sub, gi) {
 // ══════════════════════════════════════════
 
 function injectPpcButton() {
-    if (document.getElementById('ppc-btn')) return;
+    if (document.getElementById('pqm-plug-btn')) return;
     getOrCreatePpcPopup(); 
     getOrCreatePpcSub();
 
     const btn = document.createElement('div');
-    btn.id = 'ppc-btn';
+    btn.id = 'pqm-plug-btn';
     btn.title = 'Preset & Profile';
     btn.classList.add('interactable');
     btn.setAttribute('tabindex', '0');
